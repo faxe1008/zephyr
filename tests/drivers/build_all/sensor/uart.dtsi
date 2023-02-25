@@ -26,3 +26,7 @@ test_uart_grow_r502a {
 		int-gpios = <&test_gpio 0 0>;
 	};
 };
+
+test_uart_ld2410 {
+	compatible = "hilink,ld2410";
+};

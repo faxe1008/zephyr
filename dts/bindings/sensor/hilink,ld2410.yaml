@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  Hi-Link LD2410 radar sensor
+
+compatible: "hilink,ld2410"
+
+include: [sensor-device.yaml, uart-device.yaml]

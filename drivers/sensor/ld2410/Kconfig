@@ -1,0 +1,13 @@
+# LD2410 hilink radar sensor Configuration options
+
+# Copyright (c) 2021 Linumiz
+# SPDX-License-Identifier: Apache-2.0
+
+menuconfig LD2410
+	bool "LD2410 radar sensor"
+	default y
+	depends on DT_HAS_HILINK_LD2410_ENABLED
+	depends on SERIAL
+	help
+	  Enable driver for LD2410 Radar Sensor.
+
