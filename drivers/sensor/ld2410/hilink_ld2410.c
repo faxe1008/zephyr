@@ -70,7 +70,22 @@ struct ld2410_config {
 	uint16_t detection_time;
 };
 
+enum ld2410_parsing_state {
+	FIND_HEADER = 0,
+	RECEIVE_DATA_LENGTH,
+	RECEIVE_DATA
+};
+
+struct ld2410_scratch_data {
+	bool data_payload;
+	enum ld2410_parsing_state state;
+	size_t data_length;
+	size_t received_bytes;
+	uint8_t data_buffer[CFG_LD2410_MAX_FRAME_SIZE];
+};
+
 struct ld2410_data {
+	struct ld2410_scratch_data scratch_data;
 	struct ld2410_cyclic_data cyclic_data;
 	struct ld2410_engineering_data engineering_data;
 	struct ld2410_firmware_version firmware_version;
@@ -90,11 +105,6 @@ enum ld2410_command {
 	RESTART = 0xA300
 };
 
-enum ld2410_parsing_state {
-	FIND_HEADER = 0,
-	RECEIVE_DATA_LENGTH,
-	RECEIVE_DATA
-};
 
 typedef uint32_t ld2410_response;
 #define RESPONSE_CMD_ID(response)    (response & 0xFFFF)
@@ -110,20 +120,16 @@ static const uint8_t command_tail[4] = {0x04, 0x03, 0x02, 0x01};
 #define LOWER_BYTE(x)	     (x & 0xFF)
 #define BYTES_TO_SHORT(x, y) (x | (y << 8))
 
-// TODO: move scratch data into buffer
-static bool data_payload = false;
-static enum ld2410_parsing_state state = FIND_HEADER;
-static size_t data_length = 0;
-static size_t received_bytes = 0;
-static uint8_t data_buffer[CFG_LD2410_MAX_FRAME_SIZE] = {0};
 
 static ld2410_response ld2410_parse_data_frame(const struct ld2410_config *cfg,
 						      struct ld2410_data *data)
 {
+	uint8_t* data_buffer = data->scratch_data.data_buffer;
+	
 	// tail not found
-	if (memcmp(&data_buffer[data_length], data_tail, sizeof(data_tail))) {
+	if (memcmp(&data_buffer[data->scratch_data.data_length], data_tail, sizeof(data_tail))) {
 		LOG_DBG("Tail not in data frame");
-		state = FIND_HEADER;
+		data->scratch_data.state = FIND_HEADER;
 		return 0;
 	}
 
@@ -133,7 +139,7 @@ static ld2410_response ld2410_parse_data_frame(const struct ld2410_config *cfg,
 	// cyclic header 0xAA
 	if (data_buffer[1] != 0xAA) {
 		LOG_DBG("Failed cyclic header check");
-		state = FIND_HEADER;
+		data->scratch_data.state = FIND_HEADER;
 		return 0;
 	}
 
@@ -163,26 +169,28 @@ static ld2410_response ld2410_parse_data_frame(const struct ld2410_config *cfg,
 		// 0x55 cyclicData tail and check (0x00)
 		if (data_buffer[33] == 0x55 && data_buffer[34] == 0x00) {
 			LOG_DBG("cyclic data: engineering mode: tail check failed");
-			state = FIND_HEADER;
+			data->scratch_data.state = FIND_HEADER;
 			return 1;
 		}
 	} else {
 		LOG_DBG("cyclic data: tail check failed");
 		memset(&data->engineering_data, 0, sizeof(data->engineering_data));
 		if (data_buffer[11] == 0x55 && data_buffer[12] == 0x00) {
-			state = FIND_HEADER;
+			data->scratch_data.state = FIND_HEADER;
 			return 1;
 		}
 	}
-	state = FIND_HEADER;
+	data->scratch_data.state = FIND_HEADER;
 	return 0;
 }
 
 static ld2410_response ld2410_parse_command_frame(struct ld2410_config *cfg, struct ld2410_data *data)
 {
-	if (memcmp(&data_buffer[data_length], command_tail, sizeof(command_tail))) {
+	uint8_t* data_buffer = data->scratch_data.data_buffer;
+
+	if (memcmp(&data_buffer[data->scratch_data.data_length], command_tail, sizeof(command_tail))) {
 		LOG_DBG("Did not find tail in command frame");
-		state = FIND_HEADER;
+		data->scratch_data.state = FIND_HEADER;
 		return 0;
 	}
 	uint16_t cmd_id = BYTES_TO_SHORT(data_buffer[1], data_buffer[0]) - 1;
@@ -215,18 +223,18 @@ static ld2410_response ld2410_parse_command_frame(struct ld2410_config *cfg, str
 			((uint32_t)data_buffer[10] << 16) | ((uint32_t)data_buffer[11] << 24);
 		break;
 	}
-	state = FIND_HEADER;
+	data->scratch_data.state = FIND_HEADER;
 	return TO_RESPONSE(cmd_id, failed);
 }
 
 static ld2410_response ld2410_parse(struct ld2410_config *cfg,
 					   struct ld2410_data *data)
 {
-
+	uint8_t* data_buffer = data->scratch_data.data_buffer;
 	unsigned char read_byte = 0;
 	while (uart_poll_in(cfg->uart_dev, &read_byte) == 0) {
 		LOG_DBG("Received byte: %u", read_byte);
-		switch (state) {
+		switch (data->scratch_data.state) {
 		case FIND_HEADER:
 			memmove(&data_buffer[0], &data_buffer[1], sizeof(data_header) - 1);
 			data_buffer[3] = read_byte;
@@ -234,36 +242,36 @@ static ld2410_response ld2410_parse(struct ld2410_config *cfg,
 			// check for data header
 			if (!memcmp(data_buffer, data_header, sizeof(data_header))) {
 				LOG_DBG("FIND_HEADER: Found data frame header");
-				data_payload = true;
-				state = RECEIVE_DATA_LENGTH;
-				received_bytes = 0;
+				data->scratch_data.data_payload = true;
+				data->scratch_data.state = RECEIVE_DATA_LENGTH;
+				data->scratch_data.received_bytes = 0;
 			}
 
 			if (!memcmp(data_buffer, command_header, sizeof(command_header))) {
 				LOG_DBG("FIND_HEADER: Found command frame header");
-				data_payload = false;
-				state = RECEIVE_DATA_LENGTH;
-				received_bytes = 0;
+				data->scratch_data.data_payload = false;
+				data->scratch_data.state = RECEIVE_DATA_LENGTH;
+				data->scratch_data.received_bytes = 0;
 			}
 			break;
 		case RECEIVE_DATA_LENGTH:
-			data_buffer[received_bytes++] = read_byte;
-			if (received_bytes >= 2) {
-				data_length = BYTES_TO_SHORT(data_buffer[0], data_buffer[1]);
-				LOG_DBG("RECEIVE_DATA_LENGTH: %u", data_length);
-				if (data_length > CFG_LD2410_MAX_FRAME_SIZE) {
-					state = FIND_HEADER;
+			data_buffer[data->scratch_data.received_bytes++] = read_byte;
+			if (data->scratch_data.received_bytes >= 2) {
+				data->scratch_data.data_length = BYTES_TO_SHORT(data_buffer[0], data_buffer[1]);
+				LOG_DBG("RECEIVE_DATA_LENGTH: %u", data->scratch_data.data_length);
+				if (data->scratch_data.data_length > CFG_LD2410_MAX_FRAME_SIZE) {
+					data->scratch_data.state = FIND_HEADER;
 					return 0;
 				}
-				state = RECEIVE_DATA;
-				received_bytes = 0;
+				data->scratch_data.state = RECEIVE_DATA;
+				data->scratch_data.received_bytes = 0;
 			}
 			break;
 		case RECEIVE_DATA:
-			data_buffer[received_bytes++] = read_byte;
-			LOG_DBG("RECEIVE_DATA: current len: %u", received_bytes);
-			if (received_bytes == data_length + sizeof(data_tail)) {
-				if (data_payload) {
+			data_buffer[data->scratch_data.received_bytes++] = read_byte;
+			LOG_DBG("RECEIVE_DATA: current len: %u", data->scratch_data.received_bytes);
+			if (data->scratch_data.received_bytes == data->scratch_data.data_length + sizeof(data_tail)) {
+				if (data->scratch_data.data_payload) {
 					return ld2410_parse_data_frame(cfg, data);
 				} else {
 					return ld2410_parse_command_frame(cfg, data);
