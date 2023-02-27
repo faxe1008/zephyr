@@ -35,7 +35,6 @@ enum ld2410_target_state {
 };
 
 struct ld2410_cyclic_data {
-	bool in_engineering_mode;
 	enum ld2410_target_state state;
 	uint16_t moving_target_distance;
 	uint8_t moving_target_energy;
@@ -61,6 +60,7 @@ struct ld2410_firmware_version {
 
 struct ld2410_config {
 	const struct device *uart_dev;
+	bool in_engineering_mode;
 
 	uint8_t max_gate;
 	uint8_t max_moving_gate;
@@ -105,7 +105,6 @@ enum ld2410_command {
 	RESTART = 0xA300
 };
 
-
 typedef uint32_t ld2410_response;
 #define RESPONSE_CMD_ID(response)    (response & 0xFFFF)
 #define RESPONSE_SUCCESS(response)   ((response & 0xFF0000) >> 16)
@@ -120,12 +119,10 @@ static const uint8_t command_tail[4] = {0x04, 0x03, 0x02, 0x01};
 #define LOWER_BYTE(x)	     (x & 0xFF)
 #define BYTES_TO_SHORT(x, y) (x | (y << 8))
 
-
-static ld2410_response ld2410_parse_data_frame(const struct ld2410_config *cfg,
-						      struct ld2410_data *data)
+static ld2410_response ld2410_parse_data_frame(struct ld2410_config *cfg, struct ld2410_data *data)
 {
-	uint8_t* data_buffer = data->scratch_data.rx_buffer;
-	
+	uint8_t *data_buffer = data->scratch_data.rx_buffer;
+
 	// tail not found
 	if (memcmp(&data_buffer[data->scratch_data.data_length], data_tail, sizeof(data_tail))) {
 		LOG_DBG("Tail not in data frame");
@@ -134,7 +131,7 @@ static ld2410_response ld2410_parse_data_frame(const struct ld2410_config *cfg,
 	}
 
 	// engineering mode active
-	data->cyclic_data.in_engineering_mode = (data_buffer[0] == 0x01);
+	cfg->in_engineering_mode = (data_buffer[0] == 0x01);
 
 	// cyclic header 0xAA
 	if (data_buffer[1] != 0xAA) {
@@ -151,7 +148,7 @@ static ld2410_response ld2410_parse_data_frame(const struct ld2410_config *cfg,
 	data->cyclic_data.stationary_target_energy = data_buffer[8];
 	data->cyclic_data.detection_distance = BYTES_TO_SHORT(data_buffer[9], data_buffer[10]);
 
-	if (data->cyclic_data.in_engineering_mode) {
+	if (cfg->in_engineering_mode) {
 		LOG_DBG("In engineering mode");
 		data->engineering_data.max_moving_gate = data_buffer[11];
 		data->engineering_data.max_stationary_gate = data_buffer[12];
@@ -184,11 +181,13 @@ static ld2410_response ld2410_parse_data_frame(const struct ld2410_config *cfg,
 	return 0;
 }
 
-static ld2410_response ld2410_parse_command_frame(struct ld2410_config *cfg, struct ld2410_data *data)
+static ld2410_response ld2410_parse_command_frame(struct ld2410_config *cfg,
+						  struct ld2410_data *data)
 {
-	uint8_t* data_buffer = data->scratch_data.rx_buffer;
+	uint8_t *data_buffer = data->scratch_data.rx_buffer;
 
-	if (memcmp(&data_buffer[data->scratch_data.data_length], command_tail, sizeof(command_tail))) {
+	if (memcmp(&data_buffer[data->scratch_data.data_length], command_tail,
+		   sizeof(command_tail))) {
 		LOG_DBG("Did not find tail in command frame");
 		data->scratch_data.state = FIND_HEADER;
 		return 0;
@@ -227,10 +226,9 @@ static ld2410_response ld2410_parse_command_frame(struct ld2410_config *cfg, str
 	return TO_RESPONSE(cmd_id, failed);
 }
 
-static ld2410_response ld2410_parse(struct ld2410_config *cfg,
-					   struct ld2410_data *data)
+static ld2410_response ld2410_parse(struct ld2410_config *cfg, struct ld2410_data *data)
 {
-	uint8_t* data_buffer = data->scratch_data.rx_buffer;
+	uint8_t *data_buffer = data->scratch_data.rx_buffer;
 	unsigned char read_byte = 0;
 	while (uart_poll_in(cfg->uart_dev, &read_byte) == 0) {
 		LOG_DBG("Received byte: %u", read_byte);
@@ -257,7 +255,8 @@ static ld2410_response ld2410_parse(struct ld2410_config *cfg,
 		case RECEIVE_DATA_LENGTH:
 			data_buffer[data->scratch_data.received_bytes++] = read_byte;
 			if (data->scratch_data.received_bytes >= 2) {
-				data->scratch_data.data_length = BYTES_TO_SHORT(data_buffer[0], data_buffer[1]);
+				data->scratch_data.data_length =
+					BYTES_TO_SHORT(data_buffer[0], data_buffer[1]);
 				LOG_DBG("RECEIVE_DATA_LENGTH: %u", data->scratch_data.data_length);
 				if (data->scratch_data.data_length > CFG_LD2410_MAX_FRAME_SIZE) {
 					data->scratch_data.state = FIND_HEADER;
@@ -270,7 +269,8 @@ static ld2410_response ld2410_parse(struct ld2410_config *cfg,
 		case RECEIVE_DATA:
 			data_buffer[data->scratch_data.received_bytes++] = read_byte;
 			LOG_DBG("RECEIVE_DATA: current len: %u", data->scratch_data.received_bytes);
-			if (data->scratch_data.received_bytes == data->scratch_data.data_length + sizeof(data_tail)) {
+			if (data->scratch_data.received_bytes ==
+			    data->scratch_data.data_length + sizeof(data_tail)) {
 				if (data->scratch_data.data_payload) {
 					return ld2410_parse_data_frame(cfg, data);
 				} else {
@@ -283,8 +283,7 @@ static ld2410_response ld2410_parse(struct ld2410_config *cfg,
 }
 
 static int ld2410_send_request(struct ld2410_config *cfg, struct ld2410_data *data,
-				      enum ld2410_command command, const uint8_t *cmd_data,
-				      size_t len)
+			       enum ld2410_command command, const uint8_t *cmd_data, size_t len)
 {
 	size_t i;
 	// send header
@@ -323,24 +322,21 @@ static int ld2410_send_request(struct ld2410_config *cfg, struct ld2410_data *da
 	return -ETIMEDOUT;
 }
 
-static int ld2410_enable_config_mode(struct ld2410_config *cfg,
-					    struct ld2410_data *data)
+static int ld2410_enable_config_mode(struct ld2410_config *cfg, struct ld2410_data *data)
 {
 	LOG_DBG("Enable config mode");
 	uint8_t payload[2] = {0x01, 0x00};
 	return ld2410_send_request(cfg, data, ENTER_CONFIG_MODE, payload, sizeof(payload));
 }
 
-static int ld2410_disable_config_mode(struct ld2410_config *cfg,
-					     struct ld2410_data *data)
+static int ld2410_disable_config_mode(struct ld2410_config *cfg, struct ld2410_data *data)
 {
 	LOG_DBG("Leave config mode");
 	return ld2410_send_request(cfg, data, LEAVE_CONFIG_MODE, NULL, 0);
 }
 
 static int ld2410_send_command(struct ld2410_config *cfg, struct ld2410_data *data,
-				      enum ld2410_command command, const uint8_t *cmd_data,
-				      size_t len)
+			       enum ld2410_command command, const uint8_t *cmd_data, size_t len)
 {
 	LOG_DBG("Sending command %i", (int)command);
 
@@ -353,14 +349,12 @@ static int ld2410_send_command(struct ld2410_config *cfg, struct ld2410_data *da
 		}
 		ld2410_disable_config_mode(cfg, data);
 	}
-	return -EIO; // TODO: proper error here
+	return -EIO;
 }
 
-static int ld2410_set_max_distance_and_duration(struct ld2410_config *cfg,
-						       struct ld2410_data *data,
-						       uint8_t max_moving_range,
-						       uint8_t max_stationary_range,
-						       uint16_t duration)
+static int ld2410_set_max_distance_and_duration(struct ld2410_config *cfg, struct ld2410_data *data,
+						uint8_t max_moving_range,
+						uint8_t max_stationary_range, uint16_t duration)
 {
 	LOG_DBG("Set max distance and duration");
 	uint8_t payload[18] = {0x00,
@@ -391,33 +385,31 @@ static int ld2410_read_parameter(struct ld2410_config *cfg, struct ld2410_data *
 	return ld2410_send_command(cfg, data, READ_PARAMETER, NULL, 0);
 }
 
-static int ld2410_enter_engineering_mode(struct ld2410_config *cfg,
-						struct ld2410_data *data)
+static int ld2410_enter_engineering_mode(struct ld2410_config *cfg, struct ld2410_data *data)
 {
 	LOG_DBG("enter engineering mode");
 	return ld2410_send_command(cfg, data, ENTER_ENGINEERING_MODE, NULL, 0);
 }
 
-static int ld2410_leave_engineering_mode(struct ld2410_config *cfg,
-						struct ld2410_data *data)
+static int ld2410_leave_engineering_mode(struct ld2410_config *cfg, struct ld2410_data *data)
 {
 	LOG_DBG("leave engineering mode");
 	return ld2410_send_command(cfg, data, LEAVE_CONFIG_MODE, NULL, 0);
 }
 
-static int ld2410_set_gate_sensitivity_config(struct ld2410_config *cfg,
-						     struct ld2410_data *data, uint8_t gate,
-						     uint8_t moving_sensitivity,
-						     uint8_t stationary_sensitivity)
+static int ld2410_set_gate_sensitivity_config(struct ld2410_config *cfg, struct ld2410_data *data,
+					      uint8_t gate, uint8_t moving_sensitivity,
+					      uint8_t stationary_sensitivity)
 {
 	LOG_DBG("Setting gate sensitivity conf");
 	uint8_t payload[18] = {0x00, 0x00, gate,
-			    0x00, 0x00, 0x00,
-			    0x01, 0x00, moving_sensitivity,
-			    0x00, 0x00, 0x00,
-			    0x02, 0x00, stationary_sensitivity,
-			    0x00, 0x00, 0x00};
-	return ld2410_send_command(cfg, data, SET_GATE_SENSITIVITY_CONFIG, payload, sizeof(payload));
+			       0x00, 0x00, 0x00,
+			       0x01, 0x00, moving_sensitivity,
+			       0x00, 0x00, 0x00,
+			       0x02, 0x00, stationary_sensitivity,
+			       0x00, 0x00, 0x00};
+	return ld2410_send_command(cfg, data, SET_GATE_SENSITIVITY_CONFIG, payload,
+				   sizeof(payload));
 }
 
 static int ld2410_factory_reset(struct ld2410_config *cfg, struct ld2410_data *data)
@@ -432,11 +424,47 @@ static int ld2410_restart(struct ld2410_config *cfg, struct ld2410_data *data)
 	return ld2410_send_command(cfg, data, RESTART, NULL, 0);
 }
 
-static int ld2410_read_firmware_version(struct ld2410_config *cfg,
-					       struct ld2410_data *data)
+static int ld2410_read_firmware_version(struct ld2410_config *cfg, struct ld2410_data *data)
 {
 	LOG_DBG("request firmware_version");
 	return ld2410_send_command(cfg, data, READ_FIRMWARE_VERSION, NULL, 0);
+}
+
+int ld2410_attr_set(const struct device *dev, enum sensor_channel chan, enum sensor_attribute attr,
+		    const struct sensor_value *val)
+{
+
+	struct ld2410_config *cfg = dev->config;
+	struct ld2410_data *drv_data = dev->data;
+
+	switch (attr) {
+	case SENSOR_ATTR_LD2410_ENGINEERING_MODE:
+		if (val->val1) {
+			return ld2410_enter_engineering_mode(cfg, drv_data);
+		} else {
+			return ld2410_leave_engineering_mode(cfg, drv_data);
+		}
+		break;
+	default:
+		return -ENOTSUP;
+	}
+	return 0;
+}
+
+int ld2410_attr_get(const struct device *dev, enum sensor_channel chan, enum sensor_attribute attr,
+		    struct sensor_value *val)
+{
+	const struct ld2410_config *cfg = dev->config;
+
+	switch (attr) {
+	case SENSOR_ATTR_LD2410_ENGINEERING_MODE:
+		val->val1 = cfg->in_engineering_mode;
+		val->val2 = 0;
+		break;
+	default:
+		return -ENOTSUP;
+	}
+	return 0;
 }
 
 static int ld2410_sample_fetch(const struct device *dev, enum sensor_channel chan)
@@ -474,32 +502,43 @@ static int ld2410_channel_get(const struct device *dev, enum sensor_channel chan
 	return 0;
 }
 
-static const struct sensor_driver_api ld2410_api = {
-	.sample_fetch = &ld2410_sample_fetch,
-	.channel_get = &ld2410_channel_get,
-};
+static const struct sensor_driver_api ld2410_api = {.sample_fetch = &ld2410_sample_fetch,
+						    .channel_get = &ld2410_channel_get,
+						    .attr_get = &ld2410_attr_get,
+						    .attr_set = &ld2410_attr_set};
 
 static int ld2410_init(const struct device *dev)
 {
 	struct ld2410_config *cfg = dev->config;
-	struct ld2410_data* data = dev->data;
+	struct ld2410_data *data = dev->data;
 
 	if (!device_is_ready(cfg->uart_dev)) {
 		LOG_ERR("Bus device is not ready");
 		return -ENODEV;
 	}
+
+	if (!ld2410_read_firmware_version(cfg, data)) {
+		LOG_DBG("Firmware version %u.%u.%u", data->firmware_version.major,
+			data->firmware_version.minor, data->firmware_version.bugfix);
+	}
+
+	if (cfg->in_engineering_mode) {
+		ld2410_enter_engineering_mode(cfg, data);
+	}
+
 	return 0;
 }
 
-#define LD2410_DEFINE(inst)                                                                        \
-	static struct ld2410_data ld2410_data_##inst;                                              \
-                                                                                                   \
-	static const struct ld2410_config ld2410_config_##inst = {                                 \
-		.uart_dev = DEVICE_DT_GET(DT_INST_BUS(inst)),                                      \
-	};                                                                                         \
-                                                                                                   \
-	DEVICE_DT_INST_DEFINE(inst, &ld2410_init, NULL, &ld2410_data_##inst,                       \
-			      &ld2410_config_##inst, POST_KERNEL, CONFIG_SENSOR_INIT_PRIORITY,     \
+#define LD2410_DEFINE(inst)                                                                                             \
+	static struct ld2410_data ld2410_data_##inst;                                                                   \
+	\ 
+                                                                                                    static const struct \
+		ld2410_config ld2410_config_##inst = {                                                                  \
+			.uart_dev = DEVICE_DT_GET(DT_INST_BUS(inst)),                                                   \
+			.in_engineering_mode = IS_ENABLED(DT_INST_PROP(inst, engineering_mode))};                       \
+                                                                                                                        \
+	DEVICE_DT_INST_DEFINE(inst, &ld2410_init, NULL, &ld2410_data_##inst,                                            \
+			      &ld2410_config_##inst, POST_KERNEL, CONFIG_SENSOR_INIT_PRIORITY,                          \
 			      &ld2410_api);
 
 DT_INST_FOREACH_STATUS_OKAY(LD2410_DEFINE)

@@ -18,11 +18,14 @@ extern "C" {
 #include <zephyr/drivers/sensor.h>
 
 enum sensor_channel_ld2410 {
-    //
 	SENSOR_CHAN_LD2410_MT_DISTANCE = SENSOR_CHAN_PRIV_START,
     SENSOR_CHAN_LD2410_MT_ENERGY,
     SENSOR_CHAN_LD2410_ST_DISTANCE,
     SENSOR_CHAN_LD2410_ST_ENERGY
+};
+
+enum sensor_attribute_ld2410 {
+	SENSOR_ATTR_LD2410_ENGINEERING_MODE = SENSOR_ATTR_PRIV_START,
 };
 
 #ifdef __cplusplus

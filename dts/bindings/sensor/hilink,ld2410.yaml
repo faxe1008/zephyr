@@ -6,3 +6,10 @@ description: |
 compatible: "hilink,ld2410"
 
 include: [sensor-device.yaml, uart-device.yaml]
+
+
+properties:
+  engineering-mode:
+    type: boolean
+    description: |
+      In this mode the device sends data per gate
