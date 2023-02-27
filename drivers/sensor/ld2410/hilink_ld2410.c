@@ -81,7 +81,7 @@ struct ld2410_scratch_data {
 	enum ld2410_parsing_state state;
 	size_t data_length;
 	size_t received_bytes;
-	uint8_t data_buffer[CFG_LD2410_MAX_FRAME_SIZE];
+	uint8_t rx_buffer[CFG_LD2410_MAX_FRAME_SIZE];
 };
 
 struct ld2410_data {
@@ -124,7 +124,7 @@ static const uint8_t command_tail[4] = {0x04, 0x03, 0x02, 0x01};
 static ld2410_response ld2410_parse_data_frame(const struct ld2410_config *cfg,
 						      struct ld2410_data *data)
 {
-	uint8_t* data_buffer = data->scratch_data.data_buffer;
+	uint8_t* data_buffer = data->scratch_data.rx_buffer;
 	
 	// tail not found
 	if (memcmp(&data_buffer[data->scratch_data.data_length], data_tail, sizeof(data_tail))) {
@@ -186,7 +186,7 @@ static ld2410_response ld2410_parse_data_frame(const struct ld2410_config *cfg,
 
 static ld2410_response ld2410_parse_command_frame(struct ld2410_config *cfg, struct ld2410_data *data)
 {
-	uint8_t* data_buffer = data->scratch_data.data_buffer;
+	uint8_t* data_buffer = data->scratch_data.rx_buffer;
 
 	if (memcmp(&data_buffer[data->scratch_data.data_length], command_tail, sizeof(command_tail))) {
 		LOG_DBG("Did not find tail in command frame");
@@ -230,7 +230,7 @@ static ld2410_response ld2410_parse_command_frame(struct ld2410_config *cfg, str
 static ld2410_response ld2410_parse(struct ld2410_config *cfg,
 					   struct ld2410_data *data)
 {
-	uint8_t* data_buffer = data->scratch_data.data_buffer;
+	uint8_t* data_buffer = data->scratch_data.rx_buffer;
 	unsigned char read_byte = 0;
 	while (uart_poll_in(cfg->uart_dev, &read_byte) == 0) {
 		LOG_DBG("Received byte: %u", read_byte);
