@@ -437,18 +437,29 @@ int ld2410_attr_set(const struct device *dev, enum sensor_channel chan, enum sen
 	struct ld2410_config *cfg = dev->config;
 	struct ld2410_data *drv_data = dev->data;
 
-	switch (attr) {
-	case SENSOR_ATTR_LD2410_ENGINEERING_MODE:
+	if (attr == SENSOR_ATTR_LD2410_ENGINEERING_MODE) {
 		if (val->val1) {
 			return ld2410_enter_engineering_mode(cfg, drv_data);
 		} else {
 			return ld2410_leave_engineering_mode(cfg, drv_data);
 		}
-		break;
-	default:
-		return -ENOTSUP;
+	} else if (attr >= SENSOR_ATTR_LD2410_MOVING_SENSITIVITY_GATE_0 &&
+		   attr <= SENSOR_ATTR_LD2410_MOVING_SENSITIVITY_GATE_8) {
+		uint8_t gate = attr - SENSOR_ATTR_LD2410_MOVING_SENSITIVITY_GATE_0;
+		cfg->moving_sensitivity[gate] = val->val1;
+		return ld2410_set_gate_sensitivity_config(cfg, drv_data, gate,
+							  cfg->moving_sensitivity[gate],
+							  cfg->stationary_sensitivity[gate]);
+	} else if (attr >= SENSOR_ATTR_LD2410_STATIONARY_SENSITIVITY_GATE_0 &&
+		   attr <= SENSOR_ATTR_LD2410_STATIONARY_SENSITIVITY_GATE_8) {
+		uint8_t gate = attr - SENSOR_ATTR_LD2410_STATIONARY_SENSITIVITY_GATE_0;
+		cfg->stationary_sensitivity[gate] = val->val1;
+		return ld2410_set_gate_sensitivity_config(cfg, drv_data, gate,
+							  cfg->moving_sensitivity[gate],
+							  cfg->stationary_sensitivity[gate]);
 	}
-	return 0;
+
+	return -ENOTSUP;
 }
 
 int ld2410_attr_get(const struct device *dev, enum sensor_channel chan, enum sensor_attribute attr,
@@ -456,12 +467,20 @@ int ld2410_attr_get(const struct device *dev, enum sensor_channel chan, enum sen
 {
 	const struct ld2410_config *cfg = dev->config;
 
-	switch (attr) {
-	case SENSOR_ATTR_LD2410_ENGINEERING_MODE:
+	if (attr == SENSOR_ATTR_LD2410_ENGINEERING_MODE) {
 		val->val1 = cfg->in_engineering_mode;
 		val->val2 = 0;
-		break;
-	default:
+	} else if (attr >= SENSOR_ATTR_LD2410_MOVING_SENSITIVITY_GATE_0 &&
+		   attr <= SENSOR_ATTR_LD2410_MOVING_SENSITIVITY_GATE_8) {
+		uint8_t gate = attr - SENSOR_ATTR_LD2410_MOVING_SENSITIVITY_GATE_0;
+		val->val1 = cfg->moving_sensitivity[gate];
+		val->val2 = 0;
+	} else if (attr >= SENSOR_ATTR_LD2410_STATIONARY_SENSITIVITY_GATE_0 &&
+		   attr <= SENSOR_ATTR_LD2410_STATIONARY_SENSITIVITY_GATE_8) {
+		uint8_t gate = attr - SENSOR_ATTR_LD2410_STATIONARY_SENSITIVITY_GATE_0;
+		val->val1 = cfg->stationary_sensitivity[gate];
+		val->val2 = 0;
+	} else {
 		return -ENOTSUP;
 	}
 	return 0;
