@@ -46,7 +46,6 @@ struct ld2410_cyclic_data {
 	uint8_t stationary_energy_per_gate[CFG_LD2410_GATE_COUNT];
 };
 
-
 struct ld2410_firmware_version {
 	uint8_t major;
 	uint8_t minor;
@@ -236,7 +235,6 @@ static int ld2410_receive_data(const struct ld2410_config *cfg, struct ld2410_rx
 	uint8_t *data_buffer = rx_packet->buf;
 	unsigned char read_byte = 0;
 	while (uart_poll_in(cfg->uart_dev, &read_byte) == 0) {
-		LOG_DBG("Received byte: %u", read_byte);
 		switch (rx_packet->state) {
 		case FIND_HEADER:
 			memmove(&data_buffer[0], &data_buffer[1], sizeof(data_header) - 1);
@@ -272,7 +270,6 @@ static int ld2410_receive_data(const struct ld2410_config *cfg, struct ld2410_rx
 			break;
 		case RECEIVE_DATA:
 			data_buffer[rx_packet->received_bytes++] = read_byte;
-			LOG_DBG("RECEIVE_DATA: current len: %u", rx_packet->received_bytes);
 			if (rx_packet->received_bytes ==
 			    rx_packet->expected_length + sizeof(data_tail)) {
 				if (rx_packet->packet_type == DATA_PACKET) {
@@ -297,8 +294,8 @@ static int ld2410_send_request(const struct ld2410_config *cfg, struct ld2410_rx
 
 	// send frame data length
 	uint16_t frame_data_len = sizeof(uint16_t) + len; // TODO: error if > 2 bytes
-	uart_poll_out(cfg->uart_dev, UPPER_BYTE(frame_data_len));
 	uart_poll_out(cfg->uart_dev, LOWER_BYTE(frame_data_len));
+	uart_poll_out(cfg->uart_dev, UPPER_BYTE(frame_data_len));
 
 	// send command
 	uart_poll_out(cfg->uart_dev, UPPER_BYTE(command));
@@ -426,6 +423,16 @@ static int ld2410_set_gate_sensitivity_config(struct ld2410_config *cfg, struct 
 				   sizeof(payload));
 }
 
+static int ld2410_set_distance_resolution(struct ld2410_config* cfg, uint8_t resolution)
+{
+	if(resolution != 75 || resolution != 20){
+		return -EINVAL;
+	}
+	uint8_t payload[2] = {0x01, 0x00};
+	struct ld2410_rx_packet rx_packet = {0};
+	return ld2410_send_command(cfg, &rx_packet, SET_DISTANCE_RESOLUTION, payload, sizeof(payload));
+}
+
 static int ld2410_factory_reset(struct ld2410_config *cfg, struct ld2410_data *data)
 {
 	LOG_DBG("perform factory reset");
@@ -460,6 +467,8 @@ int ld2410_attr_set(const struct device *dev, enum sensor_channel chan, enum sen
 		} else {
 			return ld2410_leave_engineering_mode(cfg, drv_data);
 		}
+	}else if (attr = SENSOR_ATTR_LD2410_DISTANCE_RESOLUTION){
+		return ld2410_set_distance_resolution(cfg, val->val1);
 	} else if (attr >= SENSOR_ATTR_LD2410_MOVING_SENSITIVITY_GATE_0 &&
 		   attr <= SENSOR_ATTR_LD2410_MOVING_SENSITIVITY_GATE_8) {
 		uint8_t gate = attr - SENSOR_ATTR_LD2410_MOVING_SENSITIVITY_GATE_0;
@@ -483,7 +492,6 @@ int ld2410_attr_get(const struct device *dev, enum sensor_channel chan, enum sen
 		    struct sensor_value *val)
 {
 	const struct ld2410_data *drv_data = dev->data;
-
 
 	if (attr == SENSOR_ATTR_LD2410_ENGINEERING_MODE) {
 		val->val1 = drv_data->cyclic_data.in_engineering_mode;
