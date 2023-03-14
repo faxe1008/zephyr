@@ -148,11 +148,11 @@ static int ld2410_parse_data_frame(struct ld2410_rx_packet *rx_packet)
 	}
 
 	rx_packet->cyclic_data.state = (enum ld2410_target_state)data_buffer[2];
-	rx_packet->cyclic_data.moving_target_distance = sys_get_be16(&data_buffer[3]);
+	rx_packet->cyclic_data.moving_target_distance = sys_get_le16(&data_buffer[3]);
 	rx_packet->cyclic_data.moving_target_energy = data_buffer[5];
-	rx_packet->cyclic_data.stationary_target_distance = sys_get_be16(&data_buffer[6]);
+	rx_packet->cyclic_data.stationary_target_distance = sys_get_le16(&data_buffer[6]);
 	rx_packet->cyclic_data.stationary_target_energy = data_buffer[8];
-	rx_packet->cyclic_data.detection_distance = sys_get_be16(&data_buffer[9]);
+	rx_packet->cyclic_data.detection_distance = sys_get_le16(&data_buffer[9]);
 
 	if (rx_packet->cyclic_data.in_engineering_mode) {
 		LOG_DBG("In engineering mode");
@@ -170,14 +170,14 @@ static int ld2410_parse_data_frame(struct ld2410_rx_packet *rx_packet)
 		rx_packet->cyclic_data.max_stationary_energy = data_buffer[32];
 
 		// 0x55 cyclicData tail and check (0x00)
-		if (data_buffer[33] == 0x55 && data_buffer[34] == 0x00) {
+		if (data_buffer[33] != 0x55 || data_buffer[34] != 0x00) {
 			LOG_DBG("cyclic data: engineering mode: tail check failed");
 			rx_packet->state = FIND_HEADER;
 			return -EBADMSG;
 		}
 	} else {
-		LOG_DBG("cyclic data: tail check failed");
-		if (data_buffer[11] == 0x55 && data_buffer[12] == 0x00) {
+		if (data_buffer[11] != 0x55 || data_buffer[12] != 0x00) {
+			LOG_DBG("cyclic data: tail check failed");
 			rx_packet->state = FIND_HEADER;
 			return -EBADMSG;
 		}
@@ -217,13 +217,13 @@ static int ld2410_parse_command_frame(struct ld2410_rx_packet *rx_packet)
 			rx_packet->settings.moving_sensitivity[gate] = data_buffer[8 + gate];
 			rx_packet->settings.stationary_sensitivity[gate] = data_buffer[17 + gate];
 		}
-		rx_packet->settings.detection_time = sys_get_be16(&data_buffer[26]);
+		rx_packet->settings.detection_time = sys_get_le16(&data_buffer[26]);
 
 	case READ_FIRMWARE_VERSION:
 		LOG_DBG("Command frame read firmware version");
 		rx_packet->version.minor = data_buffer[6];
 		rx_packet->version.major = data_buffer[7];
-		rx_packet->version.bugfix = sys_get_be32(&data_buffer[8]);
+		rx_packet->version.bugfix = sys_get_le32(&data_buffer[8]);
 		break;
 	}
 	rx_packet->state = FIND_HEADER;
@@ -523,6 +523,8 @@ static int ld2410_sample_fetch(const struct device *dev, enum sensor_channel cha
 	while (k_uptime_get() < timeout_time) {
 		response = ld2410_receive_data(cfg, &rx_packet);
 		if (rx_packet.packet_type == DATA_PACKET) {
+			LOG_DBG("MOV_DIST: %u", rx_packet.cyclic_data.moving_target_distance);
+			memcpy(&drv_data->cyclic_data, &rx_packet.cyclic_data, sizeof(struct ld2410_cyclic_data));
 			return 0;
 		}
 	}
