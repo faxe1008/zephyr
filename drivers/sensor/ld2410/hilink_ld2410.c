@@ -100,11 +100,12 @@ struct ld2410_rx_packet {
 	size_t received_bytes;
 	size_t expected_length;
 	enum ld2410_parsing_state state;
+
 	enum ld2410_rx_packet_type packet_type;
+	struct ld2410_rx_command_response response;
 
 	union {
 		struct ld2410_cyclic_data cyclic_data;
-		struct ld2410_rx_command_response response;
 		struct ld2410_settings settings;
 		struct ld2410_firmware_version version;
 	};
@@ -121,15 +122,15 @@ static const uint8_t command_tail[4] = {0x04, 0x03, 0x02, 0x01};
 static int ld2410_parse_data_frame(struct ld2410_rx_packet *rx_packet)
 {
 	uint8_t *data_buffer = rx_packet->buf;
+
 	/* tail not found */
 	if (memcmp(&data_buffer[rx_packet->expected_length], data_tail, sizeof(data_tail))) {
 		LOG_DBG("Tail not in data frame");
 		rx_packet->state = FIND_HEADER;
 		return -EBADMSG;
 	}
-	rx_packet->packet_type = DATA_PACKET;
 
-	/* engineering mode active */
+	rx_packet->packet_type = DATA_PACKET;
 	rx_packet->cyclic_data.in_engineering_mode = (data_buffer[0] == 0x01);
 
 	/* expected cyclic header */
@@ -146,8 +147,8 @@ static int ld2410_parse_data_frame(struct ld2410_rx_packet *rx_packet)
 	rx_packet->cyclic_data.stationary_target_energy = data_buffer[8];
 	rx_packet->cyclic_data.detection_distance = sys_get_le16(&data_buffer[9]);
 
+	/* engineering mode active */
 	if (rx_packet->cyclic_data.in_engineering_mode) {
-		LOG_DBG("In engineering mode");
 		rx_packet->cyclic_data.max_moving_gate = data_buffer[11];
 		rx_packet->cyclic_data.max_stationary_gate = data_buffer[12];
 
@@ -162,13 +163,13 @@ static int ld2410_parse_data_frame(struct ld2410_rx_packet *rx_packet)
 		rx_packet->cyclic_data.max_stationary_energy = data_buffer[32];
 
 		if (data_buffer[33] != 0x55 || data_buffer[34] != 0x00) {
-			LOG_DBG("cyclic data: engineering mode: tail check failed");
+			LOG_DBG("cyclic_data: engineering_mode: tail check failed");
 			rx_packet->state = FIND_HEADER;
 			return -EBADMSG;
 		}
 	} else {
 		if (data_buffer[11] != 0x55 || data_buffer[12] != 0x00) {
-			LOG_DBG("cyclic data: tail check failed");
+			LOG_DBG("cyclic_data: tail check failed");
 			rx_packet->state = FIND_HEADER;
 			return -EBADMSG;
 		}
@@ -182,7 +183,7 @@ static int ld2410_parse_command_frame(struct ld2410_rx_packet *rx_packet)
 	uint8_t *data_buffer = rx_packet->buf;
 
 	if (memcmp(&data_buffer[rx_packet->expected_length], command_tail, sizeof(command_tail))) {
-		LOG_DBG("Did not find tail in command frame");
+		LOG_DBG("command_frame: tail check failed");
 		rx_packet->state = FIND_HEADER;
 		return -EBADMSG;
 	}
@@ -195,9 +196,8 @@ static int ld2410_parse_command_frame(struct ld2410_rx_packet *rx_packet)
 
 	switch (rx_packet->response.command) {
 	case READ_SETTINGS:
-		LOG_DBG("Command frame read parameter");
 		if (data_buffer[4] != 0xAA) {
-			LOG_DBG("Did not find parameter header");
+			LOG_DBG("command_frame: header byte check failed");
 			return -EBADMSG;
 		}
 		rx_packet->settings.max_gate = data_buffer[5];
@@ -211,7 +211,6 @@ static int ld2410_parse_command_frame(struct ld2410_rx_packet *rx_packet)
 		rx_packet->settings.detection_time = sys_get_le16(&data_buffer[26]);
 
 	case READ_FIRMWARE_VERSION:
-		LOG_DBG("Command frame read firmware version");
 		rx_packet->version.minor = data_buffer[6];
 		rx_packet->version.major = data_buffer[7];
 		rx_packet->version.bugfix = sys_get_le32(&data_buffer[8]);
@@ -253,7 +252,6 @@ static int ld2410_receive_data(const struct ld2410_config *cfg, struct ld2410_rx
 			data_buffer[rx_packet->received_bytes++] = read_byte;
 			if (rx_packet->received_bytes >= 2) {
 				rx_packet->expected_length = sys_get_le16(&data_buffer[0]);
-				LOG_DBG("RECEIVE_DATA_LENGTH: %u", rx_packet->expected_length);
 				if (rx_packet->expected_length > CFG_LD2410_MAX_FRAME_SIZE) {
 					rx_packet->state = FIND_HEADER;
 					return 0;
@@ -354,37 +352,8 @@ static int ld2410_send_command(struct ld2410_config *cfg, struct ld2410_rx_packe
 	return rc;
 }
 
-static int ld2410_set_max_distance_and_duration(struct ld2410_config *cfg, uint8_t max_moving_range,
-						uint8_t max_stationary_range, uint16_t duration)
-{
-	LOG_DBG("Set max distance and duration");
-	uint8_t payload[18] = {0x00,
-			       0x00,
-			       max_moving_range,
-			       0x00,
-			       0x00,
-			       0x00,
-			       0x01,
-			       0x00,
-			       max_stationary_range,
-			       0x00,
-			       0x00,
-			       0x00,
-			       0x02,
-			       0x00,
-			       LOWER_BYTE(duration),
-			       UPPER_BYTE(duration),
-			       0x00,
-			       0x00};
-	struct ld2410_rx_packet rx_packet = {0};
-
-	return ld2410_send_command(cfg, &rx_packet, SET_MAX_DISTANCE_AND_DURATION, payload,
-				   sizeof(payload));
-}
-
 static int ld2410_read_settings(struct ld2410_config *cfg, struct ld2410_data *data)
 {
-	LOG_DBG("read parameter");
 	struct ld2410_rx_packet rx_packet = {0};
 	int rc;
 
@@ -455,34 +424,39 @@ int ld2410_attr_set(const struct device *dev, enum sensor_channel chan, enum sen
 
 	struct ld2410_config *cfg = dev->config;
 	struct ld2410_data *drv_data = dev->data;
+	int rc;
 
 	switch ((enum sensor_attribute_ld2410)attr) {
 	case SENSOR_ATTR_LD2410_ENGINEERING_MODE:
-		return ld2410_set_engineering_mode(cfg, drv_data, val->val1);
+		rc = ld2410_set_engineering_mode(cfg, drv_data, val->val1);
+		break;
 	case SENSOR_ATTR_LD2410_DISTANCE_RESOLUTION:
-		return ld2410_set_distance_resolution(cfg, (enum ld2410_gate_resolution)val->val1);
+		rc = ld2410_set_distance_resolution(cfg, (enum ld2410_gate_resolution)val->val1);
+		break;
 	case SENSOR_ATTR_LD2410_MOVING_SENSITIVITY_PER_GATE:
 		for (size_t i = 0; i < LD2410_GATE_COUNT; i++) {
-			if (ld2410_set_gate_sensitivity_config(
+			rc = ld2410_set_gate_sensitivity_config(
 				    cfg, drv_data, i, val[i].val1,
-				    drv_data->settings.stationary_sensitivity[i])) {
-				return -EIO;
+				    drv_data->settings.stationary_sensitivity[i]);
+			if(rc){
+				break;
 			}
 		}
 		break;
 	case SENSOR_ATTR_LD2410_STATIONARY_SENSITIVITY_PER_GATE:
 		for (size_t i = 0; i < LD2410_GATE_COUNT; i++) {
-			if (ld2410_set_gate_sensitivity_config(
+			rc = ld2410_set_gate_sensitivity_config(
 				    cfg, drv_data, i, drv_data->settings.moving_sensitivity[i],
-				    val[i].val1)) {
-				return -EIO;
+				    val[i].val1);
+			if(rc){
+				break;
 			}
 		}
 		break;
 	default:
-		return -ENOTSUP;
+		rc = -ENOTSUP;
 	}
-	return 0;
+	return rc;
 }
 
 int ld2410_attr_get(const struct device *dev, enum sensor_channel chan, enum sensor_attribute attr,
@@ -519,7 +493,7 @@ int ld2410_attr_get(const struct device *dev, enum sensor_channel chan, enum sen
 		}
 		break;
 	default:
-		return -ENOTSUP;
+		rc = -ENOTSUP;
 	}
 
 	return rc;
@@ -531,15 +505,15 @@ static int ld2410_sample_fetch(const struct device *dev, enum sensor_channel cha
 	struct ld2410_config *cfg = dev->config;
 
 	int64_t timeout_time = k_uptime_get() + CFG_LD2410_SERIAL_TIMEOUT;
-	int response = 0;
 	struct ld2410_rx_packet rx_packet = {0};
+	int rc;
 
 	while (k_uptime_get() < timeout_time) {
-		response = ld2410_receive_data(cfg, &rx_packet);
-		if (rx_packet.packet_type == DATA_PACKET) {
+		rc = ld2410_receive_data(cfg, &rx_packet);
+		if (rc == 0 && rx_packet.packet_type == DATA_PACKET) {
 			memcpy(&drv_data->cyclic_data, &rx_packet.cyclic_data,
 			       sizeof(struct ld2410_cyclic_data));
-			return 0;
+			return rc;
 		}
 	}
 	return -ETIMEDOUT;
@@ -596,10 +570,12 @@ static int ld2410_channel_get(const struct device *dev, enum sensor_channel chan
 	return 0;
 }
 
-static const struct sensor_driver_api ld2410_api = {.sample_fetch = &ld2410_sample_fetch,
-						    .channel_get = &ld2410_channel_get,
-						    .attr_get = &ld2410_attr_get,
-						    .attr_set = &ld2410_attr_set};
+static const struct sensor_driver_api ld2410_api = {
+	.sample_fetch = &ld2410_sample_fetch,
+	.channel_get = &ld2410_channel_get,
+	.attr_get = &ld2410_attr_get,
+	.attr_set = &ld2410_attr_set
+};
 
 static int ld2410_init(const struct device *dev)
 {
