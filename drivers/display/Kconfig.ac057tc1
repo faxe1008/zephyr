@@ -1,0 +1,12 @@
+# Configuration options for AC057TC1 display
+
+# Copyright (c) 2023 Fabian Blatz <fabianblatz@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+
+config AC057TC1_DISPLAY
+	bool "AC057TC1 display driver"
+    default y
+	depends on DT_HAS_EINK_AC057TC1_ENABLED
+	select SPI
+	help
+	  Enable AC057TC1 display driver.

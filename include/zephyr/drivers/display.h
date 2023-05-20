@@ -43,6 +43,17 @@ enum display_pixel_format {
 	PIXEL_FORMAT_ARGB_8888		= BIT(3),
 	PIXEL_FORMAT_RGB_565		= BIT(4),
 	PIXEL_FORMAT_BGR_565		= BIT(5),
+
+	/**
+	 * Number of all common pixel formats.
+	 */
+	PIXEL_FORMAT_COMMON_COUNT,
+
+	/**
+	 * This and higher values are display specific.
+	 * Refer to the display header file.
+	 */
+	PIXEL_FORMAT_PRIV_START = (PIXEL_FORMAT_COMMON_COUNT - 1) << 1
 };
 
 /**
