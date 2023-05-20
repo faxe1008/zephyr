@@ -13,6 +13,9 @@
 #include <zephyr/device.h>
 #include <zephyr/drivers/spi.h>
 #include <zephyr/drivers/gpio.h>
+#include <zephyr/display/ac057tc1.h>
+#include <zephyr/sys/byteorder.h>
+#include "ac057tc1_regs.h"
 
 struct ac057tc1_display_config {
 	struct spi_dt_spec spi;
@@ -28,13 +31,171 @@ struct ac057tc1_display_data {
 	enum display_pixel_format current_pixel_format;
 };
 
-static int ac057tc1_display_init(const struct device *dev)
+static inline void ac057tc1_busy_wait(const struct device *dev)
 {
-	struct ac057tc1_display_data *disp_data = dev->data;
+	const struct ac057tc1_display_config *config = dev->config;
+	int pin = gpio_pin_get_dt(&config->busy_gpio);
 
-	disp_data->current_pixel_format = PIXEL_FORMAT_ARGB_8888;
+	while (pin > 0) {
+		__ASSERT(pin >= 0, "Failed to get pin level");
+		k_msleep(AC057TC1_BUSY_DELAY);
+		pin = gpio_pin_get_dt(&config->busy_gpio);
+	}
+}
+
+static inline int ac057tc1_write_cmd(const struct device *dev, uint8_t cmd, const uint8_t *data,
+				     size_t len)
+{
+	const struct ac057tc1_display_config *config = dev->config;
+	struct spi_buf buf = {.buf = &cmd, .len = sizeof(cmd)};
+	struct spi_buf_set buf_set = {.buffers = &buf, .count = 1};
+	int err = 0;
+
+	ac057tc1_busy_wait(dev);
+
+	err = gpio_pin_set_dt(&config->cmd_data_gpio, 1);
+	if (err < 0) {
+		return err;
+	}
+
+	err = spi_write_dt(&config->spi, &buf_set);
+	if (err < 0) {
+		goto spi_out;
+	}
+
+	if (data != NULL) {
+		buf.buf = (void *)data;
+		buf.len = len;
+
+		err = gpio_pin_set_dt(&config->cmd_data_gpio, 0);
+		if (err < 0) {
+			goto spi_out;
+		}
+
+		err = spi_write_dt(&config->spi, &buf_set);
+		if (err < 0) {
+			goto spi_out;
+		}
+	}
+
+spi_out:
+	spi_release_dt(&config->spi);
+	return err;
+}
+
+static int ac057tc1_controller_init(const struct device *dev)
+{
+	struct ac057tc1_display_data *data = dev->data;
+	const struct ac057tc1_display_config *config = dev->config;
+	int error;
+
+	/* Reset the panel */
+	error = gpio_pin_set_dt(&config->reset_gpio, 1);
+	if (error < 0) {
+		return error;
+	}
+	k_sleep(K_MSEC(AC057TC1_RESET_DELAY));
+	error = gpio_pin_set_dt(&config->reset_gpio, 0);
+	if (error < 0) {
+		return error;
+	}
+	k_sleep(K_MSEC(200));
+
+	/* Wait for to be ready by reading busy high signal */
+	ac057tc1_busy_wait(dev);
+
+	uint8_t panel_set_data[] = {0xEF, 0x08};
+
+	ac057tc1_write_cmd(dev, AC057TC1_PANEL_SET, panel_set_data, sizeof(panel_set_data));
+
+	uint8_t power_set_data[] = {0x37, 0x00, 0x05, 0x05};
+
+	ac057tc1_write_cmd(dev, AC057TC1_POWER_SET, power_set_data, sizeof(power_set_data));
+
+	ac057tc1_write_cmd(dev, AC057TC1_POWER_OFF_SEQ_SET, NULL, 0);
+
+	uint8_t booster_softstart_data[] = {0xC7, 0xC7, 0x1D};
+
+	ac057tc1_write_cmd(dev, AC057TC1_BOOSTER_SOFTSTART, booster_softstart_data,
+			   sizeof(booster_softstart_data));
+
+	uint8_t temp_sensor_enable_data = 0x00;
+
+	ac057tc1_write_cmd(dev, AC057TC1_TEMP_SENSOR_EN, &temp_sensor_enable_data,
+			   sizeof(temp_sensor_enable_data));
+
+	uint8_t vcom_data = 0x37;
+
+	ac057tc1_write_cmd(dev, AC057TC1_VCOM_DATA_INTERVAL, &vcom_data, sizeof(vcom_data));
+
+	/* TODO: WTF is this*/
+	uint8_t strange_data = 0x20;
+
+	ac057tc1_write_cmd(dev, 0x60, &strange_data, sizeof(strange_data));
+
+	uint8_t res_set_data[4] = {0};
+
+	sys_put_be16(config->width, &res_set_data[0]);
+	sys_put_be16(config->height, &res_set_data[2]);
+	ac057tc1_write_cmd(dev, AC057TC1_RESOLUTION_SET, res_set_data, sizeof(res_set_data));
+
+	/* TODO: WTF is this*/
+	uint8_t strange_data2 = 0xAA;
+
+	ac057tc1_write_cmd(dev, 0xE3, strange_data2, sizeof(strange_data2));
+
+	k_sleep(K_MSEC(100));
 
 	return 0;
+}
+
+static int ac057tc1_display_init(const struct device *dev)
+{
+	struct ac057tc1_display_data *data = dev->data;
+	const struct ac057tc1_display_config *config = dev->config;
+	int error;
+
+	data->current_pixel_format = PIXEL_FORMAT_FIXED_PALETTE_6;
+
+	if (!spi_is_ready_dt(&config->spi)) {
+		LOG_ERR("SPI bus %s not ready", config->spi.bus->name);
+		return -ENODEV;
+	}
+
+	if (!gpio_is_ready_dt(&config->reset_gpio)) {
+		LOG_ERR("Reset GPIO device not ready");
+		return -ENODEV;
+	}
+
+	error = gpio_pin_configure_dt(&config->reset_gpio, GPIO_OUTPUT_INACTIVE);
+	if (error < 0) {
+		LOG_ERR("Failed to configure reset GPIO");
+		return error;
+	}
+
+	if (!gpio_is_ready_dt(&config->busy_gpio)) {
+		LOG_ERR("Busy GPIO device not ready");
+		return -ENODEV;
+	}
+
+	error = gpio_pin_configure_dt(&config->busy_gpio, GPIO_OUTPUT_INACTIVE);
+	if (error < 0) {
+		LOG_ERR("Failed to configure busy GPIO");
+		return error;
+	}
+
+	if (!gpio_is_ready_dt(&config->cmd_data_gpio)) {
+		LOG_ERR("Command data GPIO device not ready");
+		return -ENODEV;
+	}
+
+	error = gpio_pin_configure_dt(&config->cmd_data_gpio, GPIO_OUTPUT_INACTIVE);
+	if (error < 0) {
+		LOG_ERR("Failed to configure command data GPIO");
+		return error;
+	}
+
+	return ac057tc1_controller_init(dev);
 }
 
 static int ac057tc1_display_write(const struct device *dev, const uint16_t x, const uint16_t y,
@@ -81,12 +242,12 @@ static int ac057tc1_display_blanking_on(const struct device *dev)
 
 static int ac057tc1_display_set_brightness(const struct device *dev, const uint8_t brightness)
 {
-	return 0;
+	return -ENOTSUP;
 }
 
 static int ac057tc1_display_set_contrast(const struct device *dev, const uint8_t contrast)
 {
-	return 0;
+	return -ENOTSUP;
 }
 
 static void ac057tc1_display_get_capabilities(const struct device *dev,
@@ -98,10 +259,10 @@ static void ac057tc1_display_get_capabilities(const struct device *dev,
 	memset(capabilities, 0, sizeof(struct display_capabilities));
 	capabilities->x_resolution = config->width;
 	capabilities->y_resolution = config->height;
-	capabilities->supported_pixel_formats = PIXEL_FORMAT_ARGB_8888 | PIXEL_FORMAT_RGB_888 |
-						PIXEL_FORMAT_MONO01 | PIXEL_FORMAT_MONO10;
+	capabilities->supported_pixel_formats =
+		PIXEL_FORMAT_MONO01 | PIXEL_FORMAT_MONO10 | PIXEL_FORMAT_FIXED_PALETTE_6;
 	capabilities->current_pixel_format = disp_data->current_pixel_format;
-	capabilities->screen_info = SCREEN_INFO_MONO_VTILED | SCREEN_INFO_MONO_MSB_FIRST;
+	capabilities->screen_info = SCREEN_INFO_MONO_MSB_FIRST | SCREEN_INFO_EPD;
 }
 
 static int ac057tc1_display_set_pixel_format(const struct device *dev,
@@ -109,6 +270,10 @@ static int ac057tc1_display_set_pixel_format(const struct device *dev,
 {
 	struct ac057tc1_display_data *disp_data = dev->data;
 
+	if (pixel_format != PIXEL_FORMAT_MONO01 && pixel_format != PIXEL_FORMAT_MONO10 &&
+	    pixel_format != PIXEL_FORMAT_FIXED_PALETTE_6) {
+		return -ENOTSUP;
+	}
 	disp_data->current_pixel_format = pixel_format;
 	return 0;
 }
