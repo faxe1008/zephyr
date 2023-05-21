@@ -23,12 +23,12 @@ struct ac057tc1_display_config {
 	struct gpio_dt_spec busy_gpio;
 	struct gpio_dt_spec cmd_data_gpio;
 
+	enum display_pixel_format current_pixel_format;
 	uint16_t height;
 	uint16_t width;
 };
 
 struct ac057tc1_display_data {
-	enum display_pixel_format current_pixel_format;
 };
 
 static inline void ac057tc1_busy_wait(const struct device *dev)
@@ -152,10 +152,10 @@ static int ac057tc1_controller_init(const struct device *dev)
 static int ac057tc1_display_init(const struct device *dev)
 {
 	struct ac057tc1_display_data *data = dev->data;
-	const struct ac057tc1_display_config *config = dev->config;
+	struct ac057tc1_display_config *config = dev->config;
 	int error;
 
-	data->current_pixel_format = PIXEL_FORMAT_FIXED_PALETTE_6;
+	config->current_pixel_format = PIXEL_FORMAT_FIXED_PALETTE_6;
 
 	if (!spi_is_ready_dt(&config->spi)) {
 		LOG_ERR("SPI bus %s not ready", config->spi.bus->name);
@@ -254,28 +254,26 @@ static void ac057tc1_display_get_capabilities(const struct device *dev,
 					      struct display_capabilities *capabilities)
 {
 	const struct ac057tc1_display_config *config = dev->config;
-	struct ac057tc1_display_data *disp_data = dev->data;
 
 	memset(capabilities, 0, sizeof(struct display_capabilities));
 	capabilities->x_resolution = config->width;
 	capabilities->y_resolution = config->height;
 	capabilities->supported_pixel_formats =
 		PIXEL_FORMAT_MONO01 | PIXEL_FORMAT_MONO10 | PIXEL_FORMAT_FIXED_PALETTE_6;
-	capabilities->current_pixel_format = disp_data->current_pixel_format;
+	capabilities->current_pixel_format = config->current_pixel_format;
 	capabilities->screen_info = SCREEN_INFO_MONO_MSB_FIRST | SCREEN_INFO_EPD;
 }
 
 static int ac057tc1_display_set_pixel_format(const struct device *dev,
 					     const enum display_pixel_format pixel_format)
 {
-	struct ac057tc1_display_data *disp_data = dev->data;
+	const struct ac057tc1_display_config *config = dev->config;
 
-	if (pixel_format != PIXEL_FORMAT_MONO01 && pixel_format != PIXEL_FORMAT_MONO10 &&
-	    pixel_format != PIXEL_FORMAT_FIXED_PALETTE_6) {
-		return -ENOTSUP;
+	if (pixel_format == config->current_pixel_format) {
+		return 0;
 	}
-	disp_data->current_pixel_format = pixel_format;
-	return 0;
+	LOG_ERR("Pixel format change not implemented");
+	return -ENOTSUP;
 }
 
 static const struct display_driver_api ac057tc1_display_api = {
@@ -292,6 +290,12 @@ static const struct display_driver_api ac057tc1_display_api = {
 
 #define DISPLAY_AC057TC1_DEFINE(n)                                                                 \
 	static const struct ac057tc1_display_config ac057tc1_config_##n = {                        \
+		.spi = SPI_DT_SPEC_GET(                                                            \
+			n, SPI_OP_MODE_MASTER | SPI_WORD_SET(8) | SPI_HOLD_ON_CS | SPI_LOCK_ON,    \
+			0),                                                                        \
+		.reset_gpio = GPIO_DT_SPEC_GET(n, reset_gpios),                                    \
+		.cmd_data_gpio = GPIO_DT_SPEC_GET(n, dc_gpios),                                          \
+		.busy_gpio = GPIO_DT_SPEC_GET(n, busy_gpios),                                      \
 		.height = DT_INST_PROP(n, height),                                                 \
 		.width = DT_INST_PROP(n, width),                                                   \
 	};                                                                                         \
