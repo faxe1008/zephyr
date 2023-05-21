@@ -9,6 +9,7 @@
 #include <errno.h>
 #include <string.h>
 
+#include <zephyr/logging/log.h>
 #include <zephyr/drivers/display.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/spi.h>
@@ -16,6 +17,8 @@
 #include <zephyr/display/ac057tc1.h>
 #include <zephyr/sys/byteorder.h>
 #include "ac057tc1_regs.h"
+
+LOG_MODULE_REGISTER(display_ac057tc1, CONFIG_DISPLAY_LOG_LEVEL);
 
 struct ac057tc1_display_config {
 	struct spi_dt_spec spi;
@@ -142,7 +145,7 @@ static int ac057tc1_controller_init(const struct device *dev)
 	/* TODO: WTF is this*/
 	uint8_t strange_data2 = 0xAA;
 
-	ac057tc1_write_cmd(dev, 0xE3, strange_data2, sizeof(strange_data2));
+	ac057tc1_write_cmd(dev, 0xE3, &strange_data2, sizeof(strange_data2));
 
 	k_sleep(K_MSEC(100));
 
@@ -152,10 +155,8 @@ static int ac057tc1_controller_init(const struct device *dev)
 static int ac057tc1_display_init(const struct device *dev)
 {
 	struct ac057tc1_display_data *data = dev->data;
-	struct ac057tc1_display_config *config = dev->config;
+	const struct ac057tc1_display_config *config = dev->config;
 	int error;
-
-	config->current_pixel_format = PIXEL_FORMAT_FIXED_PALETTE_6;
 
 	if (!spi_is_ready_dt(&config->spi)) {
 		LOG_ERR("SPI bus %s not ready", config->spi.bus->name);
@@ -288,14 +289,12 @@ static const struct display_driver_api ac057tc1_display_api = {
 	.set_pixel_format = ac057tc1_display_set_pixel_format,
 };
 
-#define DISPLAY_AC057TC1_DEFINE(n)                                                                 \
+#define AC057TC1_DEFINE(n)                                                                         \
 	static const struct ac057tc1_display_config ac057tc1_config_##n = {                        \
-		.spi = SPI_DT_SPEC_GET(                                                            \
-			n, SPI_OP_MODE_MASTER | SPI_WORD_SET(8) | SPI_HOLD_ON_CS | SPI_LOCK_ON,    \
-			0),                                                                        \
-		.reset_gpio = GPIO_DT_SPEC_GET(n, reset_gpios),                                    \
-		.cmd_data_gpio = GPIO_DT_SPEC_GET(n, dc_gpios),                                          \
-		.busy_gpio = GPIO_DT_SPEC_GET(n, busy_gpios),                                      \
+		.spi = SPI_DT_SPEC_INST_GET(n, SPI_OP_MODE_MASTER | SPI_WORD_SET(8), 0),           \
+		.reset_gpio = GPIO_DT_SPEC_INST_GET(n, reset_gpios),                               \
+		.cmd_data_gpio = GPIO_DT_SPEC_INST_GET(n, dc_gpios),                               \
+		.busy_gpio = GPIO_DT_SPEC_INST_GET(n, busy_gpios),                                 \
 		.height = DT_INST_PROP(n, height),                                                 \
 		.width = DT_INST_PROP(n, width),                                                   \
 	};                                                                                         \
@@ -303,7 +302,7 @@ static const struct display_driver_api ac057tc1_display_api = {
 	static struct ac057tc1_display_data ac057tc1_data_##n;                                     \
                                                                                                    \
 	DEVICE_DT_INST_DEFINE(n, &ac057tc1_display_init, NULL, &ac057tc1_data_##n,                 \
-			      &ac057tc_config_##n, APPLICATION, CONFIG_DISPLAY_INIT_PRIORITY,      \
+			      &ac057tc1_config_##n, APPLICATION, CONFIG_DISPLAY_INIT_PRIORITY,     \
 			      &ac057tc1_display_api);
 
-DT_INST_FOREACH_STATUS_OKAY(DISPLAY_AC057TC1_DEFINE)
+DT_INST_FOREACH_STATUS_OKAY(AC057TC1_DEFINE)
