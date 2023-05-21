@@ -20,6 +20,7 @@
 
 LOG_MODULE_REGISTER(display_ac057tc1, CONFIG_DISPLAY_LOG_LEVEL);
 
+
 struct ac057tc1_display_config {
 	struct spi_dt_spec spi;
 	struct gpio_dt_spec reset_gpio;
@@ -86,6 +87,16 @@ spi_out:
 	return err;
 }
 
+static int ac057tc1_set_resolution(const struct device *dev)
+{
+	const struct ac057tc1_display_config *config = dev->config;
+	uint8_t res_set_data[4] = {0};
+
+	sys_put_be16(config->width, &res_set_data[0]);
+	sys_put_be16(config->height, &res_set_data[2]);
+	return ac057tc1_write_cmd(dev, AC057TC1_RESOLUTION_SET, res_set_data, sizeof(res_set_data));
+}
+
 static int ac057tc1_controller_init(const struct device *dev)
 {
 	struct ac057tc1_display_data *data = dev->data;
@@ -136,11 +147,7 @@ static int ac057tc1_controller_init(const struct device *dev)
 
 	ac057tc1_write_cmd(dev, 0x60, &strange_data, sizeof(strange_data));
 
-	uint8_t res_set_data[4] = {0};
-
-	sys_put_be16(config->width, &res_set_data[0]);
-	sys_put_be16(config->height, &res_set_data[2]);
-	ac057tc1_write_cmd(dev, AC057TC1_RESOLUTION_SET, res_set_data, sizeof(res_set_data));
+	ac057tc1_set_resolution(dev);
 
 	/* TODO: WTF is this*/
 	uint8_t strange_data2 = 0xAA;
@@ -203,18 +210,31 @@ static int ac057tc1_display_write(const struct device *dev, const uint16_t x, co
 				  const struct display_buffer_descriptor *desc, const void *buf)
 {
 	const struct ac057tc1_display_config *config = dev->config;
+	int error;
 
 	__ASSERT(desc->width <= desc->pitch, "Pitch is smaller then width");
 	__ASSERT(desc->pitch <= config->width, "Pitch in descriptor is larger than screen size");
 	__ASSERT(desc->height <= config->height, "Height in descriptor is larger than screen size");
-	__ASSERT(x + desc->pitch <= config->width,
-		 "Writing outside screen boundaries in horizontal direction");
-	__ASSERT(y + desc->height <= config->height,
-		 "Writing outside screen boundaries in vertical direction");
+	__ASSERT(x == 0 && y == 0, "Partial redraw not available");
 
-	if (desc->width > desc->pitch || x + desc->pitch > config->width ||
-	    y + desc->height > config->height) {
-		return -EINVAL;
+	error = ac057tc1_set_resolution(dev);
+	if (error < 0) {
+		return error;
+	}
+
+	error = ac057tc1_write_cmd(dev, AC057TC1_DATA_START_TRANS, (uint8_t *)buf, desc->buf_size);
+	if (error < 0) {
+		return error;
+	}
+
+	error = ac057tc1_write_cmd(dev, AC057TC1_DISPLAY_REF, NULL, 0);
+	if (error < 0) {
+		return error;
+	}
+
+	error = ac057tc1_write_cmd(dev, AC057TC1_POWER_OFF, NULL, 0);
+	if (error < 0) {
+		return error;
 	}
 
 	return 0;
@@ -268,12 +288,20 @@ static void ac057tc1_display_get_capabilities(const struct device *dev,
 static int ac057tc1_display_set_pixel_format(const struct device *dev,
 					     const enum display_pixel_format pixel_format)
 {
-	const struct ac057tc1_display_config *config = dev->config;
-
-	if (pixel_format == config->current_pixel_format) {
+	if (pixel_format == PIXEL_FORMAT_FIXED_PALETTE_6) {
 		return 0;
 	}
 	LOG_ERR("Pixel format change not implemented");
+	return -ENOTSUP;
+}
+
+static int ac057tc1_display_set_orientation(const struct device *dev,
+					    const enum display_orientation orientation)
+{
+	if (orientation == DISPLAY_ORIENTATION_NORMAL) {
+		return 0;
+	}
+	LOG_ERR("Orientation change not supported");
 	return -ENOTSUP;
 }
 
@@ -287,6 +315,7 @@ static const struct display_driver_api ac057tc1_display_api = {
 	.set_contrast = ac057tc1_display_set_contrast,
 	.get_capabilities = ac057tc1_display_get_capabilities,
 	.set_pixel_format = ac057tc1_display_set_pixel_format,
+	.set_orientation = ac057tc1_display_set_orientation,
 };
 
 #define AC057TC1_DEFINE(n)                                                                         \
