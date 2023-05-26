@@ -8,6 +8,7 @@ menuconfig LD2410
 	default y
 	depends on DT_HAS_HILINK_LD2410_ENABLED
 	depends on SERIAL
+	select RING_BUFFER
 	help
 	  Enable driver for LD2410 Radar Sensor.
 
