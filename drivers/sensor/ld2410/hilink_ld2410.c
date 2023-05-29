@@ -34,7 +34,7 @@ const uint8_t CMD_FRAME_FOOTER[] = {0x04, 0x03, 0x02, 0x01};
 #define FRAME_HEADER_SIZE        sizeof(DATA_FRAME_HEADER)
 
 enum ld2410_frame_type {
-	DATA_FRAME = 0,
+	DATA_FRAME = 1,
 	ACK_FRAME
 };
 
@@ -218,7 +218,7 @@ static void uart_cb_handler(const struct device *uart_dev, void *user_data)
 	size_t rx_available_space;
 	int found_frame;
 
-	if (!uart_dev || !uart_irq_update(uart_dev) || !uart_irq_is_pending(uart_dev)) {
+	if (!uart_dev || uart_irq_update(uart_dev) < 0) {
 		return;
 	}
 
@@ -226,12 +226,13 @@ static void uart_cb_handler(const struct device *uart_dev, void *user_data)
 		uart_tx_cb_handler(dev);
 	}
 
-	rx_available_space = sizeof(struct ld2410_rx_frame) - drv_data->rx_frame.total_bytes_read;
+	rx_available_space = sizeof(drv_data->rx_frame.data) - drv_data->rx_frame.total_bytes_read;
 
 	while (uart_irq_rx_ready(uart_dev) && rx_available_space > 0) {
 		drv_data->rx_frame.total_bytes_read += uart_fifo_read(
 			uart_dev, &drv_data->rx_frame.data.raw[drv_data->rx_frame.total_bytes_read],
 			rx_available_space);
+
 		found_frame = find_rx_frame_start(&drv_data->rx_frame);
 		if (found_frame > 0 && found_frame == drv_data->rx_frame.awaited_type) {
 			LOG_HEXDUMP_DBG(&drv_data->rx_frame.data.raw[0],
@@ -243,6 +244,7 @@ static void uart_cb_handler(const struct device *uart_dev, void *user_data)
 		rx_available_space =
 			sizeof(drv_data->rx_frame.data) - drv_data->rx_frame.total_bytes_read;
 	}
+	uart_irq_rx_disable(uart_dev);
 }
 
 static void ld2410_uart_flush(const struct device *dev)
