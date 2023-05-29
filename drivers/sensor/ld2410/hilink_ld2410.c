@@ -28,7 +28,7 @@ const uint8_t CMD_FRAME_FOOTER[] = {0x04, 0x03, 0x02, 0x01};
 #define CFG_LD2410_BUFFER_BATCH_SIZE 5
 #define CFG_LD2410_SERIAL_TIMEOUT    100
 
-#define LD2410_MAX_FRAME_BODYLEN 35
+#define LD2410_MAX_FRAME_BODYLEN 40
 #define LD2410_CMD_ID_SIZE       sizeof(uint16_t)
 #define FRAME_FOOTER_SIZE        sizeof(DATA_FRAME_FOOTER)
 #define FRAME_HEADER_SIZE        sizeof(DATA_FRAME_HEADER)
@@ -194,6 +194,11 @@ static void uart_tx_cb_handler(const struct device *dev)
 	int sent = 0;
 	uint8_t retries = 3;
 
+	if (drv_data->tx_frame.bytes_remaining) {
+		LOG_HEXDUMP_DBG(&drv_data->tx_frame.raw_data[0], drv_data->tx_frame.bytes_remaining,
+				"TX");
+	}
+
 	while (drv_data->tx_frame.bytes_remaining > 0) {
 		sent = uart_fifo_fill(config->uart_dev, &drv_data->tx_frame.raw_data[sent],
 				      drv_data->tx_frame.bytes_remaining);
@@ -244,7 +249,6 @@ static void uart_cb_handler(const struct device *uart_dev, void *user_data)
 		rx_available_space =
 			sizeof(drv_data->rx_frame.data) - drv_data->rx_frame.total_bytes_read;
 	}
-	uart_irq_rx_disable(uart_dev);
 }
 
 static void ld2410_uart_flush(const struct device *dev)
@@ -330,11 +334,21 @@ static int ld2410_set_config_mode(const struct device *dev, bool enabled)
 
 static int ld2410_set_engineering_mode(const struct device *dev, bool enabled)
 {
-	if (enabled) {
-		return ld2410_transceive_command(dev, ENTER_ENGINEERING_MODE, NULL, 0);
-	} else {
-		return ld2410_transceive_command(dev, LEAVE_ENGINEERING_MODE, NULL, 0);
+	int ret;
+
+	ret = ld2410_set_config_mode(dev, true);
+	if (ret < 0) {
+		return ret;
 	}
+
+	if (enabled) {
+		ret = ld2410_transceive_command(dev, ENTER_ENGINEERING_MODE, NULL, 0);
+	} else {
+		ret = ld2410_transceive_command(dev, LEAVE_ENGINEERING_MODE, NULL, 0);
+	}
+
+	ld2410_set_config_mode(dev, false);
+	return ret;
 }
 
 int ld2410_attr_set(const struct device *dev, enum sensor_channel chan, enum sensor_attribute attr,
@@ -346,6 +360,7 @@ int ld2410_attr_set(const struct device *dev, enum sensor_channel chan, enum sen
 
 	switch ((enum sensor_attribute_ld2410)attr) {
 	case SENSOR_ATTR_LD2410_ENGINEERING_MODE:
+		return ld2410_set_engineering_mode(dev, val->val1);
 		break;
 	case SENSOR_ATTR_LD2410_DISTANCE_RESOLUTION:
 		break;
