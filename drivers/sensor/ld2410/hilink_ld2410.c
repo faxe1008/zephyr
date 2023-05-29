@@ -46,6 +46,7 @@ struct ld2410_frame {
 
 struct ld2410_rx_frame {
 	size_t total_bytes_read;
+	enum ld2410_frame_type awaited_type;
 	union {
 		struct ld2410_frame frame;
 		uint8_t raw[2 * sizeof(struct ld2410_frame)];
@@ -62,18 +63,39 @@ struct ld2410_tx_frame {
 	};
 };
 
+struct ld2410_cyclic_data {
+	uint8_t data_type;
+	uint8_t header_byte;
+	uint8_t target_type;
+	uint16_t moving_target_distance;
+	uint8_t moving_target_energy;
+	uint16_t stationary_target_distance;
+	uint8_t stationary_target_energy;
+	uint16_t detection_distance;
+} __packed;
+
+struct ld2410_engineering_data {
+	uint8_t max_moving_gate;
+	uint8_t max_stationary_gate;
+	uint8_t moving_energy_per_gate[LD2410_GATE_COUNT];
+	uint8_t stationary_energy_per_gate[LD2410_GATE_COUNT];
+	uint8_t max_moving_energy;
+	uint8_t max_stationary_energy;
+} __packed;
+
 struct ld2410_config {
 	const struct device *uart_dev;
 };
 
 struct ld2410_data {
-	enum ld2410_frame_type awaited_rx_frame;
 	struct ld2410_rx_frame rx_frame;
-
 	struct ld2410_tx_frame tx_frame;
 
 	struct k_sem tx_sem;
 	struct k_sem rx_sem;
+
+	struct ld2410_cyclic_data cyclic_data;
+	struct ld2410_engineering_data engineering_data;
 };
 
 enum ld2410_command {
@@ -181,6 +203,7 @@ static void uart_tx_cb_handler(const struct device *dev)
 	while (retries--) {
 		if (uart_irq_tx_complete(config->uart_dev)) {
 			uart_irq_tx_disable(config->uart_dev);
+			drv_data->rx_frame.total_bytes_read = 0;
 			uart_irq_rx_enable(config->uart_dev);
 			k_sem_give(&drv_data->tx_sem);
 			break;
@@ -207,12 +230,11 @@ static void uart_cb_handler(const struct device *uart_dev, void *user_data)
 
 	while (uart_irq_rx_ready(uart_dev) && rx_available_space > 0) {
 		drv_data->rx_frame.total_bytes_read += uart_fifo_read(
-			uart_dev, drv_data->rx_frame.data.raw[drv_data->rx_frame.total_bytes_read],
+			uart_dev, &drv_data->rx_frame.data.raw[drv_data->rx_frame.total_bytes_read],
 			rx_available_space);
-
 		found_frame = find_rx_frame_start(&drv_data->rx_frame);
-		if (found_frame > 0 && found_frame == drv_data->awaited_rx_frame) {
-			LOG_HEXDUMP_DBG(drv_data->rx_frame.data,
+		if (found_frame > 0 && found_frame == drv_data->rx_frame.awaited_type) {
+			LOG_HEXDUMP_DBG(&drv_data->rx_frame.data.raw[0],
 					drv_data->rx_frame.total_bytes_read, "RX");
 			k_sem_give(&drv_data->rx_sem);
 			break;
@@ -232,11 +254,11 @@ static void ld2410_uart_flush(const struct device *dev)
 	}
 }
 
-static int ld2410_tranceive_command(const struct device *dev, enum ld2410_command command,
-				    uint8_t *data, uint16_t data_len)
+static int ld2410_transceive_command(const struct device *dev, enum ld2410_command command,
+				     uint8_t *data, uint16_t data_len)
 {
 	struct ld2410_data *drv_data = dev->data;
-	struct ld2410_config *cfg = dev->config;
+	const struct ld2410_config *cfg = dev->config;
 	int ret;
 
 	if (LD2410_CMD_ID_SIZE + data_len >= LD2410_MAX_FRAME_BODYLEN) {
@@ -249,9 +271,8 @@ static int ld2410_tranceive_command(const struct device *dev, enum ld2410_comman
 		return ret;
 	}
 
-	drv_data->tx_frame.bytes_remaining =
-		FRAME_HEADER_AND_SIZE_LENGTH + LD2410_CMD_ID_SIZE + data_len + FRAME_FOOTER_SIZE;
-	drv_data->awaited_rx_frame = ACK_FRAME;
+	k_sem_reset(&drv_data->rx_sem);
+	drv_data->rx_frame.awaited_type = ACK_FRAME;
 
 	memcpy(&drv_data->tx_frame.frame.header, CMD_FRAME_HEADER, FRAME_HEADER_SIZE);
 	drv_data->tx_frame.frame.body_len = data_len + LD2410_CMD_ID_SIZE;
@@ -260,7 +281,8 @@ static int ld2410_tranceive_command(const struct device *dev, enum ld2410_comman
 	memcpy(&drv_data->tx_frame.frame.body[LD2410_CMD_ID_SIZE + data_len], CMD_FRAME_FOOTER,
 	       FRAME_FOOTER_SIZE);
 
-	k_sem_reset(&drv_data->rx_sem);
+	drv_data->tx_frame.bytes_remaining =
+		FRAME_HEADER_AND_SIZE_LENGTH + LD2410_CMD_ID_SIZE + data_len + FRAME_FOOTER_SIZE;
 
 	uart_irq_tx_enable(cfg->uart_dev);
 
@@ -278,13 +300,13 @@ static int ld2410_tranceive_command(const struct device *dev, enum ld2410_comman
 	}
 
 	/* Verify command id is contained */
-	if (sys_get_le16(drv_data->rx_frame.data.frame.body[0]) != (command | 0x0100)) {
+	if (sys_get_le16(&drv_data->rx_frame.data.frame.body[0]) != (command | 0x0100)) {
 		LOG_DBG("Message did not contain expected command|0x0100");
 		return -EIO;
 	}
 
 	/* Check return value */
-	if (sys_get_le16(drv_data->rx_frame.data.frame.body[LD2410_CMD_ID_SIZE])) {
+	if (sys_get_le16(&drv_data->rx_frame.data.frame.body[LD2410_CMD_ID_SIZE])) {
 		LOG_DBG("Non zero ack state");
 		return -EIO;
 	}
@@ -292,12 +314,46 @@ static int ld2410_tranceive_command(const struct device *dev, enum ld2410_comman
 	return 0;
 }
 
+static int ld2410_set_config_mode(const struct device *dev, bool enabled)
+{
+	uint8_t payload[2] = {0};
+
+	if (enabled) {
+		payload[0] = 0x01;
+		return ld2410_transceive_command(dev, ENTER_CONFIG_MODE, payload, sizeof(payload));
+	} else {
+		return ld2410_transceive_command(dev, LEAVE_CONFIG_MODE, payload, sizeof(payload));
+	}
+}
+
+static int ld2410_set_engineering_mode(const struct device *dev, bool enabled)
+{
+	if (enabled) {
+		return ld2410_transceive_command(dev, ENTER_ENGINEERING_MODE, NULL, 0);
+	} else {
+		return ld2410_transceive_command(dev, LEAVE_ENGINEERING_MODE, NULL, 0);
+	}
+}
+
 int ld2410_attr_set(const struct device *dev, enum sensor_channel chan, enum sensor_attribute attr,
 		    const struct sensor_value *val)
 {
 
-	struct ld2410_config *cfg = dev->config;
+	const struct ld2410_config *cfg = dev->config;
 	struct ld2410_data *drv_data = dev->data;
+
+	switch ((enum sensor_attribute_ld2410)attr) {
+	case SENSOR_ATTR_LD2410_ENGINEERING_MODE:
+		break;
+	case SENSOR_ATTR_LD2410_DISTANCE_RESOLUTION:
+		break;
+	case SENSOR_ATTR_LD2410_MOVING_SENSITIVITY_PER_GATE:
+		break;
+	case SENSOR_ATTR_LD2410_STATIONARY_SENSITIVITY_PER_GATE:
+		break;
+	default:
+		return -ENOTSUP;
+	}
 
 	return 0;
 }
@@ -306,13 +362,70 @@ int ld2410_attr_get(const struct device *dev, enum sensor_channel chan, enum sen
 		    struct sensor_value *val)
 {
 	struct ld2410_data *drv_data = dev->data;
-	const struct ld2410_config *cfg = dev->config;
+
+	switch ((enum sensor_attribute_ld2410)attr) {
+	case SENSOR_ATTR_LD2410_ENGINEERING_MODE:
+		val->val1 = (drv_data->cyclic_data.data_type == 0x01);
+		val->val2 = 0;
+		break;
+	case SENSOR_ATTR_LD2410_DISTANCE_RESOLUTION:
+		break;
+	case SENSOR_ATTR_LD2410_MOVING_SENSITIVITY_PER_GATE:
+		break;
+	case SENSOR_ATTR_LD2410_STATIONARY_SENSITIVITY_PER_GATE:
+		break;
+	default:
+		return -ENOTSUP;
+	}
 
 	return 0;
 }
 
 static int ld2410_sample_fetch(const struct device *dev, enum sensor_channel chan)
 {
+	struct ld2410_data *drv_data = dev->data;
+	const struct ld2410_config *cfg = dev->config;
+	int ret;
+	bool in_engineering_mode = false;
+	size_t data_end = sizeof(struct ld2410_cyclic_data);
+
+	ARG_UNUSED(chan);
+
+	drv_data->rx_frame.total_bytes_read = 0;
+	drv_data->rx_frame.awaited_type = DATA_FRAME;
+	k_sem_reset(&drv_data->rx_sem);
+	uart_irq_rx_enable(cfg->uart_dev);
+
+	ret = k_sem_take(&drv_data->rx_sem, K_MSEC(CFG_LD2410_SERIAL_TIMEOUT));
+	if (ret < 0) {
+		return ret;
+	}
+
+	if (drv_data->rx_frame.data.frame.body_len < sizeof(struct ld2410_cyclic_data)) {
+		return -EBADMSG;
+	}
+	memcpy(&drv_data->cyclic_data, &drv_data->rx_frame.data.frame.body[0],
+	       sizeof(struct ld2410_cyclic_data));
+	in_engineering_mode = drv_data->cyclic_data.data_type == 0x01;
+
+	if (drv_data->cyclic_data.header_byte != 0xAA) {
+		return -EBADMSG;
+	}
+
+	if (in_engineering_mode) {
+		data_end += sizeof(struct ld2410_engineering_data);
+	}
+
+	if (sys_get_le16(&drv_data->rx_frame.data.frame.body[data_end]) != 0x0055) {
+		return -EBADMSG;
+	}
+
+	if (in_engineering_mode) {
+		memcpy(&drv_data->engineering_data,
+		       &drv_data->rx_frame.data.frame.body[sizeof(struct ld2410_cyclic_data)],
+		       sizeof(struct ld2410_engineering_data));
+	}
+
 	return 0;
 }
 
@@ -320,6 +433,49 @@ static int ld2410_channel_get(const struct device *dev, enum sensor_channel chan
 			      struct sensor_value *val)
 {
 	struct ld2410_data *drv_data = dev->data;
+
+	switch ((enum sensor_channel_ld2410)chan) {
+	case SENSOR_CHAN_LD2410_MOVING_TARGET_DISTANCE:
+		val->val1 = drv_data->cyclic_data.moving_target_distance;
+		val->val2 = 0;
+		break;
+	case SENSOR_CHAN_LD2410_MOVING_TARGET_ENERGY:
+		val->val1 = drv_data->cyclic_data.moving_target_energy;
+		val->val2 = 0;
+		break;
+	case SENSOR_CHAN_LD2410_STATIONARY_TARGET_DISTANCE:
+		val->val1 = drv_data->cyclic_data.stationary_target_distance;
+		val->val2 = 0;
+		break;
+	case SENSOR_CHAN_LD2410_STATIONARY_TARGET_ENERGY:
+		val->val1 = drv_data->cyclic_data.stationary_target_energy;
+		val->val2 = 0;
+		break;
+	case SENSOR_CHAN_LD2410_TARGET_TYPE:
+		val->val1 = drv_data->cyclic_data.target_type;
+		val->val2 = 0;
+		break;
+	case SENSOR_CHAN_LD2410_MOVING_ENERGY_PER_GATE:
+		if (drv_data->cyclic_data.data_type != 0x01) {
+			return -ENODATA;
+		}
+		for (int i = 0; i < LD2410_GATE_COUNT; i++) {
+			val[i].val1 = drv_data->engineering_data.moving_energy_per_gate[i];
+			val[i].val2 = 0;
+		}
+		break;
+	case SENSOR_CHAN_LD2410_STATIONARY_ENERGY_PER_GATE:
+		if (drv_data->cyclic_data.data_type != 0x01) {
+			return -ENODATA;
+		}
+		for (int i = 0; i < LD2410_GATE_COUNT; i++) {
+			val[i].val1 = drv_data->engineering_data.stationary_energy_per_gate[i];
+			val[i].val2 = 0;
+		}
+		break;
+	default:
+		return -ENOTSUP;
+	}
 
 	return 0;
 }
@@ -331,7 +487,7 @@ static const struct sensor_driver_api ld2410_api = {.sample_fetch = &ld2410_samp
 
 static int ld2410_init(const struct device *dev)
 {
-	struct ld2410_config *cfg = dev->config;
+	const struct ld2410_config *cfg = dev->config;
 	struct ld2410_data *data = dev->data;
 
 	if (!device_is_ready(cfg->uart_dev)) {
