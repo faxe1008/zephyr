@@ -18,20 +18,16 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(LD2410, CONFIG_SENSOR_LOG_LEVEL);
 
-const uint8_t DATA_FRAME_HEADER[] = {0xF4, 0xF3, 0xF2, 0xF1};
-const uint8_t DATA_FRAME_FOOTER[] = {0xF8, 0xF7, 0xF6, 0xF5};
+const uint32_t DATA_FRAME_HEADER = 0xF1F2F3F4;
+const uint32_t DATA_FRAME_FOOTER = 0xF5F6F7F8;
+const uint32_t CMD_FRAME_HEADER = 0xfafbfcfd;
+const uint32_t CMD_FRAME_FOOTER = 0x01020304;
 
-const uint8_t CMD_FRAME_HEADER[] = {0xFD, 0xFC, 0xFB, 0xFA};
-const uint8_t CMD_FRAME_FOOTER[] = {0x04, 0x03, 0x02, 0x01};
-
-#define CFG_LD2410_MAX_FRAME_SIZE    50
-#define CFG_LD2410_BUFFER_BATCH_SIZE 5
-#define CFG_LD2410_SERIAL_TIMEOUT    100
-
-#define LD2410_MAX_FRAME_BODYLEN 40
-#define LD2410_CMD_ID_SIZE       sizeof(uint16_t)
-#define FRAME_FOOTER_SIZE        sizeof(DATA_FRAME_FOOTER)
-#define FRAME_HEADER_SIZE        sizeof(DATA_FRAME_HEADER)
+#define CFG_LD2410_SERIAL_TIMEOUT 100
+#define LD2410_MAX_FRAME_BODYLEN  40
+#define LD2410_CMD_ID_SIZE        sizeof(uint16_t)
+#define FRAME_FOOTER_SIZE         sizeof(DATA_FRAME_FOOTER)
+#define FRAME_HEADER_SIZE         sizeof(DATA_FRAME_HEADER)
 
 enum ld2410_frame_type {
 	DATA_FRAME = 1,
@@ -44,6 +40,8 @@ struct ld2410_frame {
 	uint8_t body[LD2410_MAX_FRAME_BODYLEN + FRAME_FOOTER_SIZE];
 } __packed;
 
+#define FRAME_HEADER_AND_SIZE_LENGTH (offsetof(struct ld2410_frame, body))
+
 struct ld2410_rx_frame {
 	size_t total_bytes_read;
 	enum ld2410_frame_type awaited_type;
@@ -52,8 +50,6 @@ struct ld2410_rx_frame {
 		uint8_t raw[2 * sizeof(struct ld2410_frame)];
 	} data;
 } __packed;
-
-#define FRAME_HEADER_AND_SIZE_LENGTH (offsetof(struct ld2410_frame, body))
 
 struct ld2410_tx_frame {
 	size_t bytes_remaining;
@@ -126,14 +122,12 @@ static int find_rx_frame_start(struct ld2410_rx_frame *rx_frame)
 
 	for (;;) {
 		if (frame_type == DATA_FRAME &&
-		    memcmp(&rx_frame->data.raw[frame_start], DATA_FRAME_HEADER,
-			   sizeof(DATA_FRAME_HEADER)) == 0) {
+		    sys_get_le32(&rx_frame->data.raw[frame_start]) == DATA_FRAME_HEADER) {
 			break;
 		}
 
 		if (frame_type == ACK_FRAME &&
-		    memcmp(&rx_frame->data.raw[frame_start], CMD_FRAME_HEADER,
-			   sizeof(CMD_FRAME_HEADER)) == 0) {
+		    sys_get_le32(&rx_frame->data.raw[frame_start]) == CMD_FRAME_HEADER) {
 			break;
 		}
 
@@ -146,6 +140,7 @@ static int find_rx_frame_start(struct ld2410_rx_frame *rx_frame)
 					FRAME_HEADER_AND_SIZE_LENGTH);
 				rx_frame->total_bytes_read = FRAME_HEADER_AND_SIZE_LENGTH;
 			}
+			LOG_DBG("Header not found in bytes read");
 			return -EAGAIN;
 		}
 		frame_start++;
@@ -170,15 +165,17 @@ static int find_rx_frame_start(struct ld2410_rx_frame *rx_frame)
 	}
 
 	if (frame_type == DATA_FRAME &&
-	    memcmp(&rx_frame->data.frame.body[rx_frame->data.frame.body_len], DATA_FRAME_FOOTER,
-		   FRAME_FOOTER_SIZE) != 0) {
+	    sys_get_le32(&rx_frame->data.frame.body[rx_frame->data.frame.body_len]) !=
+		    DATA_FRAME_FOOTER) {
+		LOG_DBG("Data frame footer mismatch");
 		rx_frame->total_bytes_read = 0;
 		return -EBADMSG;
 	}
 
 	if (frame_type == ACK_FRAME &&
-	    memcmp(&rx_frame->data.frame.body[rx_frame->data.frame.body_len], CMD_FRAME_FOOTER,
-		   FRAME_FOOTER_SIZE) != 0) {
+	    sys_get_le32(&rx_frame->data.frame.body[rx_frame->data.frame.body_len]) !=
+		    CMD_FRAME_FOOTER) {
+		LOG_DBG("ACK frame footer mismatch");
 		rx_frame->total_bytes_read = 0;
 
 		return -EBADMSG;
@@ -282,12 +279,12 @@ static int ld2410_transceive_command(const struct device *dev, enum ld2410_comma
 	k_sem_reset(&drv_data->rx_sem);
 	drv_data->rx_frame.awaited_type = ACK_FRAME;
 
-	memcpy(&drv_data->tx_frame.frame.header, CMD_FRAME_HEADER, FRAME_HEADER_SIZE);
+	drv_data->tx_frame.frame.header = CMD_FRAME_HEADER;
 	drv_data->tx_frame.frame.body_len = data_len + LD2410_CMD_ID_SIZE;
 	sys_put_le16(command, &drv_data->tx_frame.frame.body[0]);
 	memcpy(&drv_data->tx_frame.frame.body[LD2410_CMD_ID_SIZE], data, data_len);
-	memcpy(&drv_data->tx_frame.frame.body[LD2410_CMD_ID_SIZE + data_len], CMD_FRAME_FOOTER,
-	       FRAME_FOOTER_SIZE);
+	sys_put_le32(CMD_FRAME_FOOTER,
+		     &drv_data->tx_frame.frame.body[LD2410_CMD_ID_SIZE + data_len]);
 
 	drv_data->tx_frame.bytes_remaining =
 		FRAME_HEADER_AND_SIZE_LENGTH + LD2410_CMD_ID_SIZE + data_len + FRAME_FOOTER_SIZE;
@@ -302,9 +299,8 @@ static int ld2410_transceive_command(const struct device *dev, enum ld2410_comma
 	}
 
 	/* Assert frame is a command response */
-	__ASSERT(memcmp(&drv_data->rx_frame.data.frame.header, CMD_FRAME_HEADER,
-			FRAME_HEADER_SIZE) == 0,
-		 "Header does not contain command ack magic value");
+	__ASSERT(drv_data->rx_frame.data.frame.header == CMD_FRAME_HEADER,
+		 "Header does not contain magic value");
 
 	/* Verify command id is contained */
 	if (sys_get_le16(&drv_data->rx_frame.data.frame.body[0]) != (command | 0x0100)) {
