@@ -41,8 +41,7 @@ enum ld2410_frame_type {
 struct ld2410_frame {
 	uint32_t header;
 	uint16_t body_len;
-	uint8_t body[LD2410_MAX_FRAME_BODYLEN];
-	uint32_t footer;
+	uint8_t body[LD2410_MAX_FRAME_BODYLEN + FRAME_FOOTER_SIZE];
 } __packed;
 
 struct ld2410_rx_frame {
