@@ -182,6 +182,7 @@ static void uart_tx_cb_handler(const struct device *dev)
 	while (retries--) {
 		if (uart_irq_tx_complete(config->uart_dev)) {
 			uart_irq_tx_disable(config->uart_dev);
+			uart_irq_rx_enable(config->uart_dev);
 			k_sem_give(&drv_data->tx_sem);
 			break;
 		}
@@ -263,12 +264,18 @@ static int ld2410_tranceive_command(const struct device *dev, enum ld2410_comman
 	k_sem_reset(&drv_data->rx_sem);
 
 	uart_irq_tx_enable(cfg->uart_dev);
-	uart_irq_rx_enable(cfg->uart_dev);
 
 	ret = k_sem_take(&drv_data->rx_sem, K_MSEC(CFG_LD2410_SERIAL_TIMEOUT));
 	if (ret) {
 		LOG_DBG("Awaiting rx message timedout");
 		return ret;
+	}
+
+	/* Verify frame is a command response */
+	if (memcmp(&drv_data->rx_frame.data.frame.header, CMD_FRAME_HEADER, FRAME_HEADER_SIZE) !=
+	    0) {
+		LOG_DBG("Received frame was not a command ACK");
+		return -EIO;
 	}
 
 	/* Verify command id is contained */
