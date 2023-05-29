@@ -117,7 +117,7 @@ static int find_rx_frame_start(struct ld2410_rx_frame *rx_frame)
 {
 	size_t frame_start = 0;
 	size_t frame_length;
-	enum ld2410_frame_type frame_type;
+	enum ld2410_frame_type frame_type = rx_frame->awaited_type;
 
 	/* Ensure at least frame header info is read */
 	if (rx_frame->total_bytes_read < FRAME_HEADER_AND_SIZE_LENGTH + FRAME_FOOTER_SIZE) {
@@ -125,15 +125,15 @@ static int find_rx_frame_start(struct ld2410_rx_frame *rx_frame)
 	}
 
 	for (;;) {
-		if (memcmp(&rx_frame->data.raw[frame_start], DATA_FRAME_HEADER,
+		if (frame_type == DATA_FRAME &&
+		    memcmp(&rx_frame->data.raw[frame_start], DATA_FRAME_HEADER,
 			   sizeof(DATA_FRAME_HEADER)) == 0) {
-			frame_type = DATA_FRAME;
 			break;
 		}
 
-		if (memcmp(&rx_frame->data.raw[frame_start], CMD_FRAME_HEADER,
+		if (frame_type == ACK_FRAME &&
+		    memcmp(&rx_frame->data.raw[frame_start], CMD_FRAME_HEADER,
 			   sizeof(CMD_FRAME_HEADER)) == 0) {
-			frame_type = ACK_FRAME;
 			break;
 		}
 
@@ -233,15 +233,17 @@ static void uart_cb_handler(const struct device *uart_dev, void *user_data)
 
 	rx_available_space = sizeof(drv_data->rx_frame.data) - drv_data->rx_frame.total_bytes_read;
 
-	while (uart_irq_rx_ready(uart_dev) && rx_available_space > 0) {
+	while (uart_irq_rx_ready(uart_dev) > 0 && rx_available_space) {
 		drv_data->rx_frame.total_bytes_read += uart_fifo_read(
 			uart_dev, &drv_data->rx_frame.data.raw[drv_data->rx_frame.total_bytes_read],
 			rx_available_space);
 
+		/*LOG_HEXDUMP_DBG(&drv_data->rx_frame.data.raw[0],
+				drv_data->rx_frame.total_bytes_read, "RX");
+		*/
 		found_frame = find_rx_frame_start(&drv_data->rx_frame);
-		if (found_frame > 0 && found_frame == drv_data->rx_frame.awaited_type) {
-			LOG_HEXDUMP_DBG(&drv_data->rx_frame.data.raw[0],
-					drv_data->rx_frame.total_bytes_read, "RX");
+		if (found_frame > 0) {
+			uart_irq_rx_disable(uart_dev);
 			k_sem_give(&drv_data->rx_sem);
 			break;
 		}
@@ -295,15 +297,14 @@ static int ld2410_transceive_command(const struct device *dev, enum ld2410_comma
 	ret = k_sem_take(&drv_data->rx_sem, K_MSEC(CFG_LD2410_SERIAL_TIMEOUT));
 	if (ret) {
 		LOG_DBG("Awaiting rx message timedout");
+		uart_irq_rx_disable(cfg->uart_dev);
 		return ret;
 	}
 
-	/* Verify frame is a command response */
-	if (memcmp(&drv_data->rx_frame.data.frame.header, CMD_FRAME_HEADER, FRAME_HEADER_SIZE) !=
-	    0) {
-		LOG_DBG("Received frame was not a command ACK");
-		return -EIO;
-	}
+	/* Assert frame is a command response */
+	__ASSERT(memcmp(&drv_data->rx_frame.data.frame.header, CMD_FRAME_HEADER,
+			FRAME_HEADER_SIZE) == 0,
+		 "Header does not contain command ack magic value");
 
 	/* Verify command id is contained */
 	if (sys_get_le16(&drv_data->rx_frame.data.frame.body[0]) != (command | 0x0100)) {
@@ -415,6 +416,7 @@ static int ld2410_sample_fetch(const struct device *dev, enum sensor_channel cha
 
 	ret = k_sem_take(&drv_data->rx_sem, K_MSEC(CFG_LD2410_SERIAL_TIMEOUT));
 	if (ret < 0) {
+		uart_irq_rx_disable(cfg->uart_dev);
 		return ret;
 	}
 
