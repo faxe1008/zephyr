@@ -18,11 +18,20 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(LD2410, CONFIG_SENSOR_LOG_LEVEL);
 
+const uint8_t DATA_FRAME_HEADER[] = {0xF4, 0xF3, 0xF2, 0xF1};
+const uint8_t DATA_FRAME_FOOTER[] = {0xF8, 0xF7, 0xF6, 0xF5};
+
+const uint8_t CMD_FRAME_HEADER[] = {0xFD, 0xFC, 0xFB, 0xFA};
+const uint8_t CMD_FRAME_FOOTER[] = {0x04, 0x03, 0x02, 0x01};
+
 #define CFG_LD2410_MAX_FRAME_SIZE    50
 #define CFG_LD2410_BUFFER_BATCH_SIZE 5
 #define CFG_LD2410_SERIAL_TIMEOUT    100
 
 #define LD2410_MAX_FRAME_BODYLEN 35
+#define LD2410_CMD_ID_SIZE       sizeof(uint16_t)
+#define FRAME_FOOTER_SIZE        sizeof(DATA_FRAME_FOOTER)
+#define FRAME_HEADER_SIZE        sizeof(DATA_FRAME_HEADER)
 
 enum ld2410_frame_type {
 	DATA_FRAME = 0,
@@ -59,7 +68,6 @@ struct ld2410_config {
 };
 
 struct ld2410_data {
-	uint8_t awaited_cmd_id;
 	enum ld2410_frame_type awaited_rx_frame;
 	struct ld2410_rx_frame rx_frame;
 
@@ -70,27 +78,19 @@ struct ld2410_data {
 };
 
 enum ld2410_command {
-	ENTER_CONFIG_MODE = 0xFF00,
-	LEAVE_CONFIG_MODE = 0xFE00,
-	SET_MAX_DISTANCE_AND_DURATION = 0x6000,
-	READ_SETTINGS = 0x6100,
-	ENTER_ENGINEERING_MODE = 0x6200,
-	LEAVE_ENGINEERING_MODE = 0x6300,
-	SET_GATE_SENSITIVITY_CONFIG = 0x6400,
-	READ_FIRMWARE_VERSION = 0xA000,
-	SET_BAUDRATE = 0xA100,
-	FACTORY_RESET = 0xA200,
-	RESTART = 0xA300,
-	SET_DISTANCE_RESOLUTION = 0xAA00
+	ENTER_CONFIG_MODE = 0x00FF,
+	LEAVE_CONFIG_MODE = 0x00FE,
+	SET_MAX_DISTANCE_AND_DURATION = 0x0060,
+	READ_SETTINGS = 0x0061,
+	ENTER_ENGINEERING_MODE = 0x0062,
+	LEAVE_ENGINEERING_MODE = 0x0063,
+	SET_GATE_SENSITIVITY_CONFIG = 0x0064,
+	READ_FIRMWARE_VERSION = 0x00A0,
+	SET_BAUDRATE = 0x00A1,
+	FACTORY_RESET = 0x00A2,
+	RESTART = 0x00A3,
+	SET_DISTANCE_RESOLUTION = 0x00AA
 };
-
-const uint8_t DATA_FRAME_HEADER[] = {0xF4, 0xF3, 0xF2, 0xF1};
-const uint8_t DATA_FRAME_FOOTER[] = {0xF8, 0xF7, 0xF6, 0xF5};
-
-const uint8_t CMD_FRAME_HEADER[] = {0xFD, 0xFC, 0xFB, 0xFA};
-const uint8_t CMD_FRAME_FOOTER[] = {0x04, 0x03, 0x02, 0x01};
-
-#define FRAME_FOOTER_SIZE sizeof(DATA_FRAME_FOOTER)
 
 static int find_rx_frame_start(struct ld2410_rx_frame *rx_frame)
 {
@@ -131,6 +131,7 @@ static int find_rx_frame_start(struct ld2410_rx_frame *rx_frame)
 	}
 
 	if (frame_start != 0) {
+		/* Shift frame to start of the buffer */
 		frame_length = rx_frame->total_bytes_read - frame_start;
 		memmove(&rx_frame->data.raw[0], &rx_frame->data.raw[frame_start], frame_length);
 		rx_frame->total_bytes_read -= frame_start;
@@ -182,7 +183,6 @@ static void uart_tx_cb_handler(const struct device *dev)
 		if (uart_irq_tx_complete(config->uart_dev)) {
 			uart_irq_tx_disable(config->uart_dev);
 			k_sem_give(&drv_data->tx_sem);
-			uart_irq_rx_enable(config->uart_dev);
 			break;
 		}
 	}
@@ -230,6 +230,60 @@ static void ld2410_uart_flush(const struct device *dev)
 	while (uart_fifo_read(dev, &c, 1) > 0) {
 		continue;
 	}
+}
+
+static int ld2410_tranceive_command(const struct device *dev, enum ld2410_command command,
+				    uint8_t *data, uint16_t data_len)
+{
+	struct ld2410_data *drv_data = dev->data;
+	struct ld2410_config *cfg = dev->config;
+	int ret;
+
+	if (LD2410_CMD_ID_SIZE + data_len >= LD2410_MAX_FRAME_BODYLEN) {
+		return -EINVAL;
+	}
+
+	/* Make sure last command has been transferred */
+	ret = k_sem_take(&drv_data->tx_sem, K_MSEC(CFG_LD2410_SERIAL_TIMEOUT));
+	if (ret) {
+		return ret;
+	}
+
+	drv_data->tx_frame.bytes_remaining =
+		FRAME_HEADER_AND_SIZE_LENGTH + LD2410_CMD_ID_SIZE + data_len + FRAME_FOOTER_SIZE;
+	drv_data->awaited_rx_frame = ACK_FRAME;
+
+	memcpy(&drv_data->tx_frame.frame.header, CMD_FRAME_HEADER, FRAME_HEADER_SIZE);
+	drv_data->tx_frame.frame.body_len = data_len + LD2410_CMD_ID_SIZE;
+	sys_put_le16(command, &drv_data->tx_frame.frame.body[0]);
+	memcpy(&drv_data->tx_frame.frame.body[LD2410_CMD_ID_SIZE], data, data_len);
+	memcpy(&drv_data->tx_frame.frame.body[LD2410_CMD_ID_SIZE + data_len], CMD_FRAME_FOOTER,
+	       FRAME_FOOTER_SIZE);
+
+	k_sem_reset(&drv_data->rx_sem);
+
+	uart_irq_tx_enable(cfg->uart_dev);
+	uart_irq_rx_enable(cfg->uart_dev);
+
+	ret = k_sem_take(&drv_data->rx_sem, K_MSEC(CFG_LD2410_SERIAL_TIMEOUT));
+	if (ret) {
+		LOG_DBG("Awaiting rx message timedout");
+		return ret;
+	}
+
+	/* Verify command id is contained */
+	if (sys_get_le16(drv_data->rx_frame.data.frame.body[0]) != (command | 0x0100)) {
+		LOG_DBG("Message did not contain expected command|0x0100");
+		return -EIO;
+	}
+
+	/* Check return value */
+	if (sys_get_le16(drv_data->rx_frame.data.frame.body[LD2410_CMD_ID_SIZE])) {
+		LOG_DBG("Non zero ack state");
+		return -EIO;
+	}
+
+	return 0;
 }
 
 int ld2410_attr_set(const struct device *dev, enum sensor_channel chan, enum sensor_attribute attr,
