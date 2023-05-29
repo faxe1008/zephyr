@@ -11,7 +11,6 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <zephyr/sys/byteorder.h>
-#include <zephyr/sys/ring_buffer.h>
 
 #include <zephyr/drivers/sensor/ld2410.h>
 
@@ -120,6 +119,7 @@ static int find_rx_frame_start(struct ld2410_rx_frame *rx_frame)
 		return -EAGAIN;
 	}
 
+	/* Locate the start of the frame */
 	for (;;) {
 		if (frame_type == DATA_FRAME &&
 		    sys_get_le32(&rx_frame->data.raw[frame_start]) == DATA_FRAME_HEADER) {
@@ -154,7 +154,8 @@ static int find_rx_frame_start(struct ld2410_rx_frame *rx_frame)
 	}
 
 	if (rx_frame->data.frame.body_len >= LD2410_MAX_FRAME_BODYLEN) {
-		/* Length information is implausible, discard buffer*/
+		/* Length information is implausible, discard buffer */
+		LOG_DBG("Implausible length information: %u", rx_frame->data.frame.body_len);
 		rx_frame->total_bytes_read = 0;
 		return -EBADMSG;
 	}
@@ -263,7 +264,7 @@ static int ld2410_transceive_command(const struct device *dev, enum ld2410_comma
 				     uint8_t *data, uint16_t data_len)
 {
 	struct ld2410_data *drv_data = dev->data;
-	const struct ld2410_config *cfg = dev->config;
+	const struct ld2410_config *drv_cfg = dev->config;
 	int ret;
 
 	if (LD2410_CMD_ID_SIZE + data_len >= LD2410_MAX_FRAME_BODYLEN) {
@@ -289,12 +290,12 @@ static int ld2410_transceive_command(const struct device *dev, enum ld2410_comma
 	drv_data->tx_frame.bytes_remaining =
 		FRAME_HEADER_AND_SIZE_LENGTH + LD2410_CMD_ID_SIZE + data_len + FRAME_FOOTER_SIZE;
 
-	uart_irq_tx_enable(cfg->uart_dev);
+	uart_irq_tx_enable(drv_cfg->uart_dev);
 
 	ret = k_sem_take(&drv_data->rx_sem, K_MSEC(CFG_LD2410_SERIAL_TIMEOUT));
 	if (ret) {
 		LOG_DBG("Awaiting rx message timedout");
-		uart_irq_rx_disable(cfg->uart_dev);
+		uart_irq_rx_disable(drv_cfg->uart_dev);
 		return ret;
 	}
 
@@ -351,10 +352,6 @@ static int ld2410_set_engineering_mode(const struct device *dev, bool enabled)
 int ld2410_attr_set(const struct device *dev, enum sensor_channel chan, enum sensor_attribute attr,
 		    const struct sensor_value *val)
 {
-
-	const struct ld2410_config *cfg = dev->config;
-	struct ld2410_data *drv_data = dev->data;
-
 	switch ((enum sensor_attribute_ld2410)attr) {
 	case SENSOR_ATTR_LD2410_ENGINEERING_MODE:
 		return ld2410_set_engineering_mode(dev, val->val1);
@@ -398,7 +395,7 @@ int ld2410_attr_get(const struct device *dev, enum sensor_channel chan, enum sen
 static int ld2410_sample_fetch(const struct device *dev, enum sensor_channel chan)
 {
 	struct ld2410_data *drv_data = dev->data;
-	const struct ld2410_config *cfg = dev->config;
+	const struct ld2410_config *drv_cfg = dev->config;
 	int ret;
 	bool in_engineering_mode = false;
 	size_t data_end = sizeof(struct ld2410_cyclic_data);
@@ -408,15 +405,17 @@ static int ld2410_sample_fetch(const struct device *dev, enum sensor_channel cha
 	drv_data->rx_frame.total_bytes_read = 0;
 	drv_data->rx_frame.awaited_type = DATA_FRAME;
 	k_sem_reset(&drv_data->rx_sem);
-	uart_irq_rx_enable(cfg->uart_dev);
+	uart_irq_rx_enable(drv_cfg->uart_dev);
 
 	ret = k_sem_take(&drv_data->rx_sem, K_MSEC(CFG_LD2410_SERIAL_TIMEOUT));
 	if (ret < 0) {
-		uart_irq_rx_disable(cfg->uart_dev);
+		uart_irq_rx_disable(drv_cfg->uart_dev);
 		return ret;
 	}
+	LOG_DBG("Received data frame");
 
 	if (drv_data->rx_frame.data.frame.body_len < sizeof(struct ld2410_cyclic_data)) {
+		LOG_DBG("Unexpected size");
 		return -EBADMSG;
 	}
 	memcpy(&drv_data->cyclic_data, &drv_data->rx_frame.data.frame.body[0],
@@ -424,6 +423,7 @@ static int ld2410_sample_fetch(const struct device *dev, enum sensor_channel cha
 	in_engineering_mode = drv_data->cyclic_data.data_type == 0x01;
 
 	if (drv_data->cyclic_data.header_byte != 0xAA) {
+		LOG_DBG("Header byte mismatch");
 		return -EBADMSG;
 	}
 
@@ -432,6 +432,7 @@ static int ld2410_sample_fetch(const struct device *dev, enum sensor_channel cha
 	}
 
 	if (sys_get_le16(&drv_data->rx_frame.data.frame.body[data_end]) != 0x0055) {
+		LOG_DBG("Intrafooter mismatch");
 		return -EBADMSG;
 	}
 
@@ -502,29 +503,29 @@ static const struct sensor_driver_api ld2410_api = {.sample_fetch = &ld2410_samp
 
 static int ld2410_init(const struct device *dev)
 {
-	const struct ld2410_config *cfg = dev->config;
-	struct ld2410_data *data = dev->data;
+	const struct ld2410_config *drv_cfg = dev->config;
+	struct ld2410_data *drv_data = dev->data;
 
-	if (!device_is_ready(cfg->uart_dev)) {
+	if (!device_is_ready(drv_cfg->uart_dev)) {
 		LOG_ERR("Bus device is not ready");
 		return -ENODEV;
 	}
 
-	uart_irq_rx_disable(cfg->uart_dev);
-	uart_irq_tx_disable(cfg->uart_dev);
+	uart_irq_rx_disable(drv_cfg->uart_dev);
+	uart_irq_tx_disable(drv_cfg->uart_dev);
 
-	ld2410_uart_flush(cfg->uart_dev);
+	ld2410_uart_flush(drv_cfg->uart_dev);
 
-	k_sem_init(&data->rx_sem, 0, 1);
-	k_sem_init(&data->tx_sem, 1, 1);
+	k_sem_init(&drv_data->rx_sem, 0, 1);
+	k_sem_init(&drv_data->tx_sem, 1, 1);
 
-	uart_irq_callback_user_data_set(cfg->uart_dev, uart_cb_handler, (void *)dev);
-
+	uart_irq_callback_user_data_set(drv_cfg->uart_dev, uart_cb_handler, (void *)dev);
+	LOG_DBG("Init done");
 	return 0;
 }
 
 #define LD2410_DEFINE(inst)                                                                        \
-	static struct ld2410_data ld2410_data_##inst = {};                                         \
+	static struct ld2410_data ld2410_data_##inst;                                              \
                                                                                                    \
 	static const struct ld2410_config ld2410_config_##inst = {                                 \
 		.uart_dev = DEVICE_DT_GET(DT_INST_BUS(inst))};                                     \
