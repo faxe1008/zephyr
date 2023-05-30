@@ -12,4 +12,10 @@ properties:
   engineering-mode:
     type: boolean
     description: |
-      In this mode the device sends data per gate
+      In this mode the sensor sends additional data.
+
+  int-gpios:
+    type: phandle-array
+    required: false
+    description: |
+      Interrupt pin. When the presence is detected, the GPIO is set to high.
