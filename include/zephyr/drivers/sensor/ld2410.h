@@ -27,8 +27,8 @@ enum ld2410_target_state {
 };
 
 enum ld2410_gate_resolution {
-	LD2410_GATE_RESOLUTION_20 = 20,
-	LD2410_GATE_RESOLUTION_75 = 75
+	LD2410_GATE_RESOLUTION_75 = 0x00,
+	LD2410_GATE_RESOLUTION_20 = 0x01
 };
 
 enum sensor_channel_ld2410 {

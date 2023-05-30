@@ -165,11 +165,12 @@ static void uart_cb_handler(const struct device *uart_dev, void *user_data)
 			uart_dev, &drv_data->rx_frame.data.raw[drv_data->rx_frame.total_bytes_read],
 			rx_available_space);
 
-		/*LOG_HEXDUMP_DBG(&drv_data->rx_frame.data.raw[0],
-				drv_data->rx_frame.total_bytes_read, "RX");
-		*/
+
+		
 		found_frame = find_rx_frame_start(&drv_data->rx_frame);
 		if (found_frame > 0) {
+			LOG_HEXDUMP_DBG(&drv_data->rx_frame.data.raw[0],
+				drv_data->rx_frame.total_bytes_read, "RX");
 			uart_irq_rx_disable(uart_dev);
 			k_sem_give(&drv_data->rx_sem);
 			break;
@@ -259,7 +260,8 @@ static int ld2410_set_config_mode(const struct device *dev, bool enabled)
 	}
 }
 
-static int ld2410_set_engineering_mode(const struct device *dev, bool enabled)
+static int ld2410_change_configuration(const struct device *dev, enum ld2410_command command,
+				       uint8_t *data, uint16_t len)
 {
 	int ret;
 
@@ -267,15 +269,30 @@ static int ld2410_set_engineering_mode(const struct device *dev, bool enabled)
 	if (ret < 0) {
 		return ret;
 	}
-
-	if (enabled) {
-		ret = ld2410_transceive_command(dev, ENTER_ENGINEERING_MODE, NULL, 0);
-	} else {
-		ret = ld2410_transceive_command(dev, LEAVE_ENGINEERING_MODE, NULL, 0);
-	}
-
+	ret = ld2410_transceive_command(dev, command, data, len);
 	ld2410_set_config_mode(dev, false);
 	return ret;
+}
+
+static int ld2410_set_engineering_mode(const struct device *dev, bool enabled)
+{
+	if (enabled) {
+		return ld2410_change_configuration(dev, ENTER_ENGINEERING_MODE, NULL, 0);
+	} else {
+		return ld2410_change_configuration(dev, LEAVE_CONFIG_MODE, NULL, 0);
+	}
+}
+
+static inline int ld2410_set_distance_resolution(const struct device *dev,
+						 enum ld2410_gate_resolution resolution)
+{
+	uint8_t payload[2];
+
+	if (resolution != LD2410_GATE_RESOLUTION_20 && resolution != LD2410_GATE_RESOLUTION_75) {
+		return -EINVAL;
+	}
+	sys_put_le16((uint16_t)resolution, payload);
+	return ld2410_change_configuration(dev, SET_DISTANCE_RESOLUTION, payload, sizeof(payload));
 }
 
 int ld2410_attr_set(const struct device *dev, enum sensor_channel chan, enum sensor_attribute attr,
@@ -434,6 +451,7 @@ static int ld2410_init(const struct device *dev)
 {
 	const struct ld2410_config *drv_cfg = dev->config;
 	struct ld2410_data *drv_data = dev->data;
+	int ret;
 
 	if (!device_is_ready(drv_cfg->uart_dev)) {
 		LOG_ERR("Bus device is not ready");
@@ -449,7 +467,19 @@ static int ld2410_init(const struct device *dev)
 	k_sem_init(&drv_data->tx_sem, 1, 1);
 
 	uart_irq_callback_user_data_set(drv_cfg->uart_dev, uart_cb_handler, (void *)dev);
-	LOG_DBG("Init done");
+
+	ret = ld2410_set_engineering_mode(dev, drv_cfg->engineering_mode);
+	if (ret < 0) {
+		LOG_ERR("Error setting engineering mode: %d", ret);
+		return ret;
+	}
+
+	ret = ld2410_set_distance_resolution(dev, drv_cfg->distance_resolution);
+	if (ret < 0) {
+		LOG_ERR("Error setting distance resolution: %d", ret);
+		return ret;
+	}
+
 	return 0;
 }
 
@@ -457,7 +487,10 @@ static int ld2410_init(const struct device *dev)
 	static struct ld2410_data ld2410_data_##inst;                                              \
                                                                                                    \
 	static const struct ld2410_config ld2410_config_##inst = {                                 \
-		.uart_dev = DEVICE_DT_GET(DT_INST_BUS(inst))};                                     \
+		.uart_dev = DEVICE_DT_GET(DT_INST_BUS(inst)),                                      \
+		.engineering_mode = DT_INST_PROP(inst, engineering_mode),                          \
+		.distance_resolution = DT_INST_PROP(inst, distance_resolution),                    \
+	};                                                                                         \
                                                                                                    \
 	DEVICE_DT_INST_DEFINE(inst, &ld2410_init, NULL, &ld2410_data_##inst,                       \
 			      &ld2410_config_##inst, POST_KERNEL, CONFIG_SENSOR_INIT_PRIORITY,     \

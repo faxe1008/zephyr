@@ -69,6 +69,9 @@ struct ld2410_engineering_data {
 
 struct ld2410_config {
 	const struct device *uart_dev;
+
+	bool engineering_mode;
+	enum ld2410_gate_resolution distance_resolution;
 };
 
 struct ld2410_data {

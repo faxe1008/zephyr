@@ -14,6 +14,17 @@ properties:
     description: |
       In this mode the sensor sends additional data.
 
+  distance-resolution:
+    type: int
+    default: 0
+    description: |
+      Programmable distance resolution per gate
+      0 =  -> 75cm per gate
+      1 =  -> 20cm per gate
+    enum:
+      - 0
+      - 1
+
   int-gpios:
     type: phandle-array
     required: false
