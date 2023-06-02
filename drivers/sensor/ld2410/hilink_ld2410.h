@@ -13,9 +13,9 @@
 #include <zephyr/drivers/sensor/ld2410.h>
 #include <stdint.h>
 
-#define LD2410_MAX_FRAME_BODYLEN  40
-#define FRAME_FOOTER_SIZE         sizeof(uint32_t)
-#define FRAME_HEADER_SIZE         sizeof(uint32_t)
+#define LD2410_MAX_FRAME_BODYLEN 40
+#define FRAME_FOOTER_SIZE        sizeof(uint32_t)
+#define FRAME_HEADER_SIZE        sizeof(uint32_t)
 
 enum ld2410_frame_type {
 	DATA_FRAME = 1,
@@ -67,6 +67,15 @@ struct ld2410_engineering_data {
 	uint8_t max_stationary_energy;
 } __packed;
 
+struct ld2410_settings {
+	uint8_t maximum_distance_gate;
+	uint8_t max_moving_distance_gate;
+	uint8_t mx_stationary_distance_gate;
+	uint8_t moving_gate_sensitivity[LD2410_GATE_COUNT];
+	uint8_t stationary_gate_sensitivity[LD2410_GATE_COUNT];
+	uint16_t absence_detection_timeout;
+} __packed;
+
 struct ld2410_config {
 	const struct device *uart_dev;
 
@@ -80,9 +89,11 @@ struct ld2410_data {
 
 	struct k_sem tx_sem;
 	struct k_sem rx_sem;
+	struct k_mutex lock;
 
 	struct ld2410_cyclic_data cyclic_data;
 	struct ld2410_engineering_data engineering_data;
+	struct ld2410_settings settings;
 };
 
 #endif /* ZEPHYR_DRIVERS_SENSOR_HILINK_LD2410_H_ */
