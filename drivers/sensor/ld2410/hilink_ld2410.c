@@ -19,7 +19,7 @@ const uint32_t DATA_FRAME_FOOTER = 0xF5F6F7F8;
 const uint32_t CMD_FRAME_HEADER = 0xFAFBFCFD;
 const uint32_t CMD_FRAME_FOOTER = 0x01020304;
 
-#define CFG_LD2410_SERIAL_TIMEOUT 100
+#define CFG_LD2410_SERIAL_TIMEOUT 200
 #define LD2410_CMD_ID_SIZE        sizeof(uint16_t)
 
 enum ld2410_command {
@@ -30,19 +30,14 @@ enum ld2410_command {
 	ENTER_ENGINEERING_MODE = 0x0062,
 	LEAVE_ENGINEERING_MODE = 0x0063,
 	SET_GATE_SENSITIVITY_CONFIG = 0x0064,
-	READ_FIRMWARE_VERSION = 0x00A0,
-	SET_BAUDRATE = 0x00A1,
-	FACTORY_RESET = 0x00A2,
-	RESTART = 0x00A3,
 	SET_DISTANCE_RESOLUTION = 0x00AA,
 	GET_DISTANCE_RESOLUTION = 0x00AB
 };
 
-static int find_rx_frame_start(struct ld2410_rx_frame *rx_frame)
+static int find_rx_frame_start(struct ld2410_rx_frame *rx_frame, enum ld2410_frame_type expected_type)
 {
 	size_t frame_start = 0;
 	size_t frame_length;
-	enum ld2410_frame_type frame_type = rx_frame->awaited_type;
 
 	/* Ensure at least frame header info is read */
 	if (rx_frame->total_bytes_read < FRAME_HEADER_AND_SIZE_LENGTH + FRAME_FOOTER_SIZE) {
@@ -51,12 +46,12 @@ static int find_rx_frame_start(struct ld2410_rx_frame *rx_frame)
 
 	/* Locate the start of the frame */
 	for (;;) {
-		if (frame_type == DATA_FRAME &&
+		if (expected_type == DATA_FRAME &&
 		    sys_get_le32(&rx_frame->data.raw[frame_start]) == DATA_FRAME_HEADER) {
 			break;
 		}
 
-		if (frame_type == ACK_FRAME &&
+		if (expected_type == ACK_FRAME &&
 		    sys_get_le32(&rx_frame->data.raw[frame_start]) == CMD_FRAME_HEADER) {
 			break;
 		}
@@ -95,7 +90,7 @@ static int find_rx_frame_start(struct ld2410_rx_frame *rx_frame)
 		return -EAGAIN;
 	}
 
-	if (frame_type == DATA_FRAME &&
+	if (expected_type == DATA_FRAME &&
 	    sys_get_le32(&rx_frame->data.frame.body[rx_frame->data.frame.body_len]) !=
 		    DATA_FRAME_FOOTER) {
 		LOG_DBG("Data frame footer mismatch");
@@ -103,7 +98,7 @@ static int find_rx_frame_start(struct ld2410_rx_frame *rx_frame)
 		return -EBADMSG;
 	}
 
-	if (frame_type == ACK_FRAME &&
+	if (expected_type == ACK_FRAME &&
 	    sys_get_le32(&rx_frame->data.frame.body[rx_frame->data.frame.body_len]) !=
 		    CMD_FRAME_FOOTER) {
 		LOG_DBG("ACK frame footer mismatch");
@@ -112,7 +107,7 @@ static int find_rx_frame_start(struct ld2410_rx_frame *rx_frame)
 		return -EBADMSG;
 	}
 
-	return frame_type;
+	return expected_type;
 }
 
 static void uart_tx_cb_handler(const struct device *dev)
@@ -166,7 +161,7 @@ static void uart_cb_handler(const struct device *uart_dev, void *user_data)
 			uart_dev, &drv_data->rx_frame.data.raw[drv_data->rx_frame.total_bytes_read],
 			rx_available_space);
 
-		found_frame = find_rx_frame_start(&drv_data->rx_frame);
+		found_frame = find_rx_frame_start(&drv_data->rx_frame, drv_data->awaited_rx_frame_type);
 		if (found_frame > 0) {
 			LOG_HEXDUMP_DBG(&drv_data->rx_frame.data.raw[0],
 					drv_data->rx_frame.total_bytes_read, "RX");
@@ -207,7 +202,7 @@ static int ld2410_transceive_command(const struct device *dev, enum ld2410_comma
 	}
 
 	k_sem_reset(&drv_data->rx_sem);
-	drv_data->rx_frame.awaited_type = ACK_FRAME;
+	drv_data->awaited_rx_frame_type = ACK_FRAME;
 
 	drv_data->tx_frame.frame.header = CMD_FRAME_HEADER;
 	drv_data->tx_frame.frame.body_len = data_len + LD2410_CMD_ID_SIZE;
@@ -416,7 +411,7 @@ static int ld2410_sample_fetch(const struct device *dev, enum sensor_channel cha
 	ARG_UNUSED(chan);
 
 	drv_data->rx_frame.total_bytes_read = 0;
-	drv_data->rx_frame.awaited_type = DATA_FRAME;
+	drv_data->awaited_rx_frame_type = DATA_FRAME;
 	k_sem_reset(&drv_data->rx_sem);
 
 	k_mutex_lock(&drv_data->lock, K_FOREVER);

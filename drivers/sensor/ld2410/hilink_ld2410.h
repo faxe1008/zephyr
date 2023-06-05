@@ -32,7 +32,6 @@ struct ld2410_frame {
 
 struct ld2410_rx_frame {
 	size_t total_bytes_read;
-	enum ld2410_frame_type awaited_type;
 	union {
 		struct ld2410_frame frame;
 		uint8_t raw[2 * sizeof(struct ld2410_frame)];
@@ -84,6 +83,7 @@ struct ld2410_config {
 };
 
 struct ld2410_data {
+	enum ld2410_frame_type awaited_rx_frame_type;
 	struct ld2410_rx_frame rx_frame;
 	struct ld2410_tx_frame tx_frame;
 
