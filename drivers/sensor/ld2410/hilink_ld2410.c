@@ -21,6 +21,7 @@ const uint32_t CMD_FRAME_FOOTER = 0x01020304;
 
 #define CFG_LD2410_SERIAL_TIMEOUT 200
 #define LD2410_CMD_ID_SIZE        sizeof(uint16_t)
+#define FRAME_HEADER_AND_SIZE_LENGTH (offsetof(struct ld2410_frame_data, body))
 
 enum ld2410_command {
 	ENTER_CONFIG_MODE = 0x00FF,
@@ -163,7 +164,7 @@ static void uart_cb_handler(const struct device *uart_dev, void *user_data)
 
 		found_frame =
 			find_rx_frame_start(&drv_data->rx_frame, drv_data->awaited_rx_frame_type);
-		if (found_frame > 0) {
+		if (found_frame >= 0) {
 			LOG_HEXDUMP_DBG(&drv_data->rx_frame.raw[0],
 					drv_data->rx_frame.byte_count, "RX");
 			uart_irq_rx_disable(uart_dev);

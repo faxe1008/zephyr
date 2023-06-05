@@ -18,7 +18,7 @@
 #define FRAME_HEADER_SIZE        sizeof(uint32_t)
 
 enum ld2410_frame_type {
-	DATA_FRAME = 1,
+	DATA_FRAME = 0,
 	ACK_FRAME
 };
 
@@ -28,7 +28,6 @@ struct ld2410_frame_data {
 	uint8_t body[LD2410_MAX_FRAME_BODYLEN + FRAME_FOOTER_SIZE];
 } __packed;
 
-#define FRAME_HEADER_AND_SIZE_LENGTH (offsetof(struct ld2410_frame_data, body))
 
 struct ld2410_frame {
 	size_t byte_count;
