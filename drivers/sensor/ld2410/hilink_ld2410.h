@@ -30,7 +30,7 @@ struct ld2410_frame_data {
 
 #define FRAME_HEADER_AND_SIZE_LENGTH (offsetof(struct ld2410_frame_data, body))
 
-struct ld2410_rx_frame {
+struct ld2410_frame {
 	size_t byte_count;
 	union {
 		struct ld2410_frame_data frame;
@@ -38,13 +38,6 @@ struct ld2410_rx_frame {
 	} data;
 } __packed;
 
-struct ld2410_tx_frame {
-	size_t bytes_remaining;
-	union {
-		struct ld2410_frame_data frame;
-		uint8_t raw_data[sizeof(struct ld2410_frame_data)];
-	};
-};
 
 struct ld2410_cyclic_data {
 	uint8_t data_type;
@@ -84,8 +77,8 @@ struct ld2410_config {
 
 struct ld2410_data {
 	enum ld2410_frame_type awaited_rx_frame_type;
-	struct ld2410_rx_frame rx_frame;
-	struct ld2410_tx_frame tx_frame;
+	struct ld2410_frame rx_frame;
+	struct ld2410_frame tx_frame;
 
 	struct k_sem tx_sem;
 	struct k_sem rx_sem;

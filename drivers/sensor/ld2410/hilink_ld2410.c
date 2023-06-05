@@ -34,7 +34,7 @@ enum ld2410_command {
 	GET_DISTANCE_RESOLUTION = 0x00AB
 };
 
-static int find_rx_frame_start(struct ld2410_rx_frame *rx_frame, enum ld2410_frame_type expected_type)
+static int find_rx_frame_start(struct ld2410_frame *rx_frame, enum ld2410_frame_type expected_type)
 {
 	size_t frame_start = 0;
 	size_t frame_length;
@@ -117,15 +117,15 @@ static void uart_tx_cb_handler(const struct device *dev)
 	int sent = 0;
 	uint8_t retries = 3;
 
-	if (drv_data->tx_frame.bytes_remaining) {
-		LOG_HEXDUMP_DBG(&drv_data->tx_frame.raw_data[0], drv_data->tx_frame.bytes_remaining,
+	if (drv_data->tx_frame.byte_count) {
+		LOG_HEXDUMP_DBG(&drv_data->tx_frame.data.raw[0], drv_data->tx_frame.byte_count,
 				"TX");
 	}
 
-	while (drv_data->tx_frame.bytes_remaining > 0) {
-		sent = uart_fifo_fill(config->uart_dev, &drv_data->tx_frame.raw_data[sent],
-				      drv_data->tx_frame.bytes_remaining);
-		drv_data->tx_frame.bytes_remaining -= sent;
+	while (drv_data->tx_frame.byte_count > 0) {
+		sent = uart_fifo_fill(config->uart_dev, &drv_data->tx_frame.data.raw[sent],
+				      drv_data->tx_frame.byte_count);
+		drv_data->tx_frame.byte_count -= sent;
 	}
 
 	while (retries--) {
@@ -161,7 +161,8 @@ static void uart_cb_handler(const struct device *uart_dev, void *user_data)
 			uart_dev, &drv_data->rx_frame.data.raw[drv_data->rx_frame.byte_count],
 			rx_available_space);
 
-		found_frame = find_rx_frame_start(&drv_data->rx_frame, drv_data->awaited_rx_frame_type);
+		found_frame =
+			find_rx_frame_start(&drv_data->rx_frame, drv_data->awaited_rx_frame_type);
 		if (found_frame > 0) {
 			LOG_HEXDUMP_DBG(&drv_data->rx_frame.data.raw[0],
 					drv_data->rx_frame.byte_count, "RX");
@@ -204,14 +205,14 @@ static int ld2410_transceive_command(const struct device *dev, enum ld2410_comma
 	k_sem_reset(&drv_data->rx_sem);
 	drv_data->awaited_rx_frame_type = ACK_FRAME;
 
-	drv_data->tx_frame.frame.header = CMD_FRAME_HEADER;
-	drv_data->tx_frame.frame.body_len = data_len + LD2410_CMD_ID_SIZE;
-	sys_put_le16(command, &drv_data->tx_frame.frame.body[0]);
-	memcpy(&drv_data->tx_frame.frame.body[LD2410_CMD_ID_SIZE], data, data_len);
+	drv_data->tx_frame.data.frame.header = CMD_FRAME_HEADER;
+	drv_data->tx_frame.data.frame.body_len = data_len + LD2410_CMD_ID_SIZE;
+	sys_put_le16(command, &drv_data->tx_frame.data.frame.body[0]);
+	memcpy(&drv_data->tx_frame.data.frame.body[LD2410_CMD_ID_SIZE], data, data_len);
 	sys_put_le32(CMD_FRAME_FOOTER,
-		     &drv_data->tx_frame.frame.body[LD2410_CMD_ID_SIZE + data_len]);
+		     &drv_data->tx_frame.data.frame.body[LD2410_CMD_ID_SIZE + data_len]);
 
-	drv_data->tx_frame.bytes_remaining =
+	drv_data->tx_frame.byte_count =
 		FRAME_HEADER_AND_SIZE_LENGTH + LD2410_CMD_ID_SIZE + data_len + FRAME_FOOTER_SIZE;
 
 	uart_irq_tx_enable(drv_cfg->uart_dev);
