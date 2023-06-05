@@ -47,20 +47,20 @@ static int find_rx_frame_start(struct ld2410_frame *rx_frame, enum ld2410_frame_
 	/* Locate the start of the frame */
 	for (;;) {
 		if (expected_type == DATA_FRAME &&
-		    sys_get_le32(&rx_frame->data_union.raw[frame_start]) == DATA_FRAME_HEADER) {
+		    sys_get_le32(&rx_frame->raw[frame_start]) == DATA_FRAME_HEADER) {
 			break;
 		}
 
 		if (expected_type == ACK_FRAME &&
-		    sys_get_le32(&rx_frame->data_union.raw[frame_start]) == CMD_FRAME_HEADER) {
+		    sys_get_le32(&rx_frame->raw[frame_start]) == CMD_FRAME_HEADER) {
 			break;
 		}
 
 		if (frame_start >= rx_frame->byte_count) {
 			/* If the buffer is full shift but leave at least header bytes in buffer */
-			if (frame_start >= sizeof(rx_frame->data_union.raw)) {
-				memmove(&rx_frame->data_union.raw[0],
-					&rx_frame->data_union.raw[sizeof(rx_frame->data_union.raw) -
+			if (frame_start >= sizeof(rx_frame->raw)) {
+				memmove(&rx_frame->raw[0],
+					&rx_frame->raw[sizeof(rx_frame->raw) -
 							    FRAME_HEADER_AND_SIZE_LENGTH - 1],
 					FRAME_HEADER_AND_SIZE_LENGTH);
 				rx_frame->byte_count = FRAME_HEADER_AND_SIZE_LENGTH;
@@ -74,24 +74,24 @@ static int find_rx_frame_start(struct ld2410_frame *rx_frame, enum ld2410_frame_
 	if (frame_start != 0) {
 		/* Shift frame to start of the buffer */
 		frame_length = rx_frame->byte_count - frame_start;
-		memmove(&rx_frame->data_union.raw[0], &rx_frame->data_union.raw[frame_start], frame_length);
+		memmove(&rx_frame->raw[0], &rx_frame->raw[frame_start], frame_length);
 		rx_frame->byte_count -= frame_start;
 	}
 
-	if (rx_frame->data_union.data.body_len >= LD2410_MAX_FRAME_BODYLEN) {
+	if (rx_frame->data.body_len >= LD2410_MAX_FRAME_BODYLEN) {
 		/* Length information is implausible, discard buffer */
-		LOG_DBG("Implausible length information: %u", rx_frame->data_union.data.body_len);
+		LOG_DBG("Implausible length information: %u", rx_frame->data.body_len);
 		rx_frame->byte_count = 0;
 		return -EBADMSG;
 	}
 
 	if (rx_frame->byte_count <
-	    FRAME_HEADER_AND_SIZE_LENGTH + rx_frame->data_union.data.body_len + FRAME_FOOTER_SIZE) {
+	    FRAME_HEADER_AND_SIZE_LENGTH + rx_frame->data.body_len + FRAME_FOOTER_SIZE) {
 		return -EAGAIN;
 	}
 
 	if (expected_type == DATA_FRAME &&
-	    sys_get_le32(&rx_frame->data_union.data.body[rx_frame->data_union.data.body_len]) !=
+	    sys_get_le32(&rx_frame->data.body[rx_frame->data.body_len]) !=
 		    DATA_FRAME_FOOTER) {
 		LOG_DBG("Data frame footer mismatch");
 		rx_frame->byte_count = 0;
@@ -99,7 +99,7 @@ static int find_rx_frame_start(struct ld2410_frame *rx_frame, enum ld2410_frame_
 	}
 
 	if (expected_type == ACK_FRAME &&
-	    sys_get_le32(&rx_frame->data_union.data.body[rx_frame->data_union.data.body_len]) !=
+	    sys_get_le32(&rx_frame->data.body[rx_frame->data.body_len]) !=
 		    CMD_FRAME_FOOTER) {
 		LOG_DBG("ACK frame footer mismatch");
 		rx_frame->byte_count = 0;
@@ -118,12 +118,12 @@ static void uart_tx_cb_handler(const struct device *dev)
 	uint8_t retries = 3;
 
 	if (drv_data->tx_frame.byte_count) {
-		LOG_HEXDUMP_DBG(&drv_data->tx_frame.data_union.raw[0], drv_data->tx_frame.byte_count,
+		LOG_HEXDUMP_DBG(&drv_data->tx_frame.raw[0], drv_data->tx_frame.byte_count,
 				"TX");
 	}
 
 	while (drv_data->tx_frame.byte_count > 0) {
-		sent = uart_fifo_fill(config->uart_dev, &drv_data->tx_frame.data_union.raw[sent],
+		sent = uart_fifo_fill(config->uart_dev, &drv_data->tx_frame.raw[sent],
 				      drv_data->tx_frame.byte_count);
 		drv_data->tx_frame.byte_count -= sent;
 	}
@@ -154,17 +154,17 @@ static void uart_cb_handler(const struct device *uart_dev, void *user_data)
 		uart_tx_cb_handler(dev);
 	}
 
-	rx_available_space = sizeof(drv_data->rx_frame.data_union) - drv_data->rx_frame.byte_count;
+	rx_available_space = sizeof(drv_data->rx_frame.raw) - drv_data->rx_frame.byte_count;
 
 	while (uart_irq_rx_ready(uart_dev) > 0 && rx_available_space) {
 		drv_data->rx_frame.byte_count += uart_fifo_read(
-			uart_dev, &drv_data->rx_frame.data_union.raw[drv_data->rx_frame.byte_count],
+			uart_dev, &drv_data->rx_frame.raw[drv_data->rx_frame.byte_count],
 			rx_available_space);
 
 		found_frame =
 			find_rx_frame_start(&drv_data->rx_frame, drv_data->awaited_rx_frame_type);
 		if (found_frame > 0) {
-			LOG_HEXDUMP_DBG(&drv_data->rx_frame.data_union.raw[0],
+			LOG_HEXDUMP_DBG(&drv_data->rx_frame.raw[0],
 					drv_data->rx_frame.byte_count, "RX");
 			uart_irq_rx_disable(uart_dev);
 			k_sem_give(&drv_data->rx_sem);
@@ -172,7 +172,7 @@ static void uart_cb_handler(const struct device *uart_dev, void *user_data)
 		}
 
 		rx_available_space =
-			sizeof(drv_data->rx_frame.data_union) - drv_data->rx_frame.byte_count;
+			sizeof(drv_data->rx_frame.raw) - drv_data->rx_frame.byte_count;
 	}
 }
 
@@ -205,12 +205,12 @@ static int ld2410_transceive_command(const struct device *dev, enum ld2410_comma
 	k_sem_reset(&drv_data->rx_sem);
 	drv_data->awaited_rx_frame_type = ACK_FRAME;
 
-	drv_data->tx_frame.data_union.data.header = CMD_FRAME_HEADER;
-	drv_data->tx_frame.data_union.data.body_len = data_len + LD2410_CMD_ID_SIZE;
-	sys_put_le16(command, &drv_data->tx_frame.data_union.data.body[0]);
-	memcpy(&drv_data->tx_frame.data_union.data.body[LD2410_CMD_ID_SIZE], data, data_len);
+	drv_data->tx_frame.data.header = CMD_FRAME_HEADER;
+	drv_data->tx_frame.data.body_len = data_len + LD2410_CMD_ID_SIZE;
+	sys_put_le16(command, &drv_data->tx_frame.data.body[0]);
+	memcpy(&drv_data->tx_frame.data.body[LD2410_CMD_ID_SIZE], data, data_len);
 	sys_put_le32(CMD_FRAME_FOOTER,
-		     &drv_data->tx_frame.data_union.data.body[LD2410_CMD_ID_SIZE + data_len]);
+		     &drv_data->tx_frame.data.body[LD2410_CMD_ID_SIZE + data_len]);
 
 	drv_data->tx_frame.byte_count =
 		FRAME_HEADER_AND_SIZE_LENGTH + LD2410_CMD_ID_SIZE + data_len + FRAME_FOOTER_SIZE;
@@ -229,13 +229,13 @@ static int ld2410_transceive_command(const struct device *dev, enum ld2410_comma
 		 "Header does not contain magic value");
 
 	/* Verify command id is contained */
-	if (sys_get_le16(&drv_data->rx_frame.data_union.data.body[0]) != (command | 0x0100)) {
+	if (sys_get_le16(&drv_data->rx_frame.data.body[0]) != (command | 0x0100)) {
 		LOG_DBG("Message did not contain expected command|0x0100");
 		return -EIO;
 	}
 
 	/* Check return value */
-	if (sys_get_le16(&drv_data->rx_frame.data_union.data.body[LD2410_CMD_ID_SIZE])) {
+	if (sys_get_le16(&drv_data->rx_frame.data.body[LD2410_CMD_ID_SIZE])) {
 		LOG_DBG("Non zero ack state");
 		return -EIO;
 	}
@@ -306,7 +306,7 @@ static inline int ld2410_get_distance_resolution(const struct device *dev,
 
 	ret = ld2410_transceive_command(dev, GET_DISTANCE_RESOLUTION, NULL, 0);
 	if (ret == 0) {
-		*resolution = sys_get_le16(&drv_data->rx_frame.data_union.data.body[4]);
+		*resolution = sys_get_le16(&drv_data->rx_frame.data.body[4]);
 	}
 
 	k_mutex_unlock(&drv_data->lock);
@@ -330,11 +330,11 @@ static int ld2410_read_settings(const struct device *dev)
 	if (ret == 0) {
 
 		/* Check for header byte */
-		if (drv_data->rx_frame.data_union.data.body[4] != 0xAA) {
+		if (drv_data->rx_frame.data.body[4] != 0xAA) {
 			LOG_ERR("Setting read response non matching header byte");
 			goto unlock;
 		}
-		memcpy(&drv_data->settings, &drv_data->rx_frame.data_union.data.body[5],
+		memcpy(&drv_data->settings, &drv_data->rx_frame.data.body[5],
 		       sizeof(struct ld2410_settings));
 	}
 
@@ -424,12 +424,12 @@ static int ld2410_sample_fetch(const struct device *dev, enum sensor_channel cha
 		goto unlock;
 	}
 
-	if (drv_data->rx_frame.data_union.data.body_len < sizeof(struct ld2410_cyclic_data)) {
+	if (drv_data->rx_frame.data.body_len < sizeof(struct ld2410_cyclic_data)) {
 		LOG_DBG("Unexpected size");
 		ret = -EBADMSG;
 		goto unlock;
 	}
-	memcpy(&drv_data->cyclic_data, &drv_data->rx_frame.data_union.data.body[0],
+	memcpy(&drv_data->cyclic_data, &drv_data->rx_frame.data.body[0],
 	       sizeof(struct ld2410_cyclic_data));
 	in_engineering_mode = drv_data->cyclic_data.data_type == 0x01;
 
@@ -443,7 +443,7 @@ static int ld2410_sample_fetch(const struct device *dev, enum sensor_channel cha
 		data_end += sizeof(struct ld2410_engineering_data);
 	}
 
-	if (sys_get_le16(&drv_data->rx_frame.data_union.data.body[data_end]) != 0x0055) {
+	if (sys_get_le16(&drv_data->rx_frame.data.body[data_end]) != 0x0055) {
 		LOG_DBG("Intrafooter mismatch");
 		ret = -EBADMSG;
 		goto unlock;
@@ -451,7 +451,7 @@ static int ld2410_sample_fetch(const struct device *dev, enum sensor_channel cha
 
 	if (in_engineering_mode) {
 		memcpy(&drv_data->engineering_data,
-		       &drv_data->rx_frame.data_union.data.body[sizeof(struct ld2410_cyclic_data)],
+		       &drv_data->rx_frame.data.body[sizeof(struct ld2410_cyclic_data)],
 		       sizeof(struct ld2410_engineering_data));
 	}
 

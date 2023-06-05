@@ -35,7 +35,7 @@ struct ld2410_frame {
 	union {
 		struct ld2410_frame_data data;
 		uint8_t raw[2 * sizeof(struct ld2410_frame_data)];
-	} data_union;
+	};
 } __packed;
 
 
