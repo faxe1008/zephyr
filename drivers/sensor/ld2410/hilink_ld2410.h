@@ -33,9 +33,9 @@ struct ld2410_frame_data {
 struct ld2410_frame {
 	size_t byte_count;
 	union {
-		struct ld2410_frame_data frame;
+		struct ld2410_frame_data data;
 		uint8_t raw[2 * sizeof(struct ld2410_frame_data)];
-	} data;
+	} data_union;
 } __packed;
 
 
