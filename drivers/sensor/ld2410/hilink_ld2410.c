@@ -40,7 +40,7 @@ static int find_rx_frame_start(struct ld2410_rx_frame *rx_frame, enum ld2410_fra
 	size_t frame_length;
 
 	/* Ensure at least frame header info is read */
-	if (rx_frame->total_bytes_read < FRAME_HEADER_AND_SIZE_LENGTH + FRAME_FOOTER_SIZE) {
+	if (rx_frame->byte_count < FRAME_HEADER_AND_SIZE_LENGTH + FRAME_FOOTER_SIZE) {
 		return -EAGAIN;
 	}
 
@@ -56,14 +56,14 @@ static int find_rx_frame_start(struct ld2410_rx_frame *rx_frame, enum ld2410_fra
 			break;
 		}
 
-		if (frame_start >= rx_frame->total_bytes_read) {
+		if (frame_start >= rx_frame->byte_count) {
 			/* If the buffer is full shift but leave at least header bytes in buffer */
 			if (frame_start >= sizeof(rx_frame->data.raw)) {
 				memmove(&rx_frame->data.raw[0],
 					&rx_frame->data.raw[sizeof(rx_frame->data.raw) -
 							    FRAME_HEADER_AND_SIZE_LENGTH - 1],
 					FRAME_HEADER_AND_SIZE_LENGTH);
-				rx_frame->total_bytes_read = FRAME_HEADER_AND_SIZE_LENGTH;
+				rx_frame->byte_count = FRAME_HEADER_AND_SIZE_LENGTH;
 			}
 			LOG_DBG("Header not found in bytes read");
 			return -EAGAIN;
@@ -73,19 +73,19 @@ static int find_rx_frame_start(struct ld2410_rx_frame *rx_frame, enum ld2410_fra
 
 	if (frame_start != 0) {
 		/* Shift frame to start of the buffer */
-		frame_length = rx_frame->total_bytes_read - frame_start;
+		frame_length = rx_frame->byte_count - frame_start;
 		memmove(&rx_frame->data.raw[0], &rx_frame->data.raw[frame_start], frame_length);
-		rx_frame->total_bytes_read -= frame_start;
+		rx_frame->byte_count -= frame_start;
 	}
 
 	if (rx_frame->data.frame.body_len >= LD2410_MAX_FRAME_BODYLEN) {
 		/* Length information is implausible, discard buffer */
 		LOG_DBG("Implausible length information: %u", rx_frame->data.frame.body_len);
-		rx_frame->total_bytes_read = 0;
+		rx_frame->byte_count = 0;
 		return -EBADMSG;
 	}
 
-	if (rx_frame->total_bytes_read <
+	if (rx_frame->byte_count <
 	    FRAME_HEADER_AND_SIZE_LENGTH + rx_frame->data.frame.body_len + FRAME_FOOTER_SIZE) {
 		return -EAGAIN;
 	}
@@ -94,7 +94,7 @@ static int find_rx_frame_start(struct ld2410_rx_frame *rx_frame, enum ld2410_fra
 	    sys_get_le32(&rx_frame->data.frame.body[rx_frame->data.frame.body_len]) !=
 		    DATA_FRAME_FOOTER) {
 		LOG_DBG("Data frame footer mismatch");
-		rx_frame->total_bytes_read = 0;
+		rx_frame->byte_count = 0;
 		return -EBADMSG;
 	}
 
@@ -102,7 +102,7 @@ static int find_rx_frame_start(struct ld2410_rx_frame *rx_frame, enum ld2410_fra
 	    sys_get_le32(&rx_frame->data.frame.body[rx_frame->data.frame.body_len]) !=
 		    CMD_FRAME_FOOTER) {
 		LOG_DBG("ACK frame footer mismatch");
-		rx_frame->total_bytes_read = 0;
+		rx_frame->byte_count = 0;
 
 		return -EBADMSG;
 	}
@@ -131,7 +131,7 @@ static void uart_tx_cb_handler(const struct device *dev)
 	while (retries--) {
 		if (uart_irq_tx_complete(config->uart_dev)) {
 			uart_irq_tx_disable(config->uart_dev);
-			drv_data->rx_frame.total_bytes_read = 0;
+			drv_data->rx_frame.byte_count = 0;
 			uart_irq_rx_enable(config->uart_dev);
 			k_sem_give(&drv_data->tx_sem);
 			break;
@@ -154,24 +154,24 @@ static void uart_cb_handler(const struct device *uart_dev, void *user_data)
 		uart_tx_cb_handler(dev);
 	}
 
-	rx_available_space = sizeof(drv_data->rx_frame.data) - drv_data->rx_frame.total_bytes_read;
+	rx_available_space = sizeof(drv_data->rx_frame.data) - drv_data->rx_frame.byte_count;
 
 	while (uart_irq_rx_ready(uart_dev) > 0 && rx_available_space) {
-		drv_data->rx_frame.total_bytes_read += uart_fifo_read(
-			uart_dev, &drv_data->rx_frame.data.raw[drv_data->rx_frame.total_bytes_read],
+		drv_data->rx_frame.byte_count += uart_fifo_read(
+			uart_dev, &drv_data->rx_frame.data.raw[drv_data->rx_frame.byte_count],
 			rx_available_space);
 
 		found_frame = find_rx_frame_start(&drv_data->rx_frame, drv_data->awaited_rx_frame_type);
 		if (found_frame > 0) {
 			LOG_HEXDUMP_DBG(&drv_data->rx_frame.data.raw[0],
-					drv_data->rx_frame.total_bytes_read, "RX");
+					drv_data->rx_frame.byte_count, "RX");
 			uart_irq_rx_disable(uart_dev);
 			k_sem_give(&drv_data->rx_sem);
 			break;
 		}
 
 		rx_available_space =
-			sizeof(drv_data->rx_frame.data) - drv_data->rx_frame.total_bytes_read;
+			sizeof(drv_data->rx_frame.data) - drv_data->rx_frame.byte_count;
 	}
 }
 
@@ -410,7 +410,7 @@ static int ld2410_sample_fetch(const struct device *dev, enum sensor_channel cha
 
 	ARG_UNUSED(chan);
 
-	drv_data->rx_frame.total_bytes_read = 0;
+	drv_data->rx_frame.byte_count = 0;
 	drv_data->awaited_rx_frame_type = DATA_FRAME;
 	k_sem_reset(&drv_data->rx_sem);
 

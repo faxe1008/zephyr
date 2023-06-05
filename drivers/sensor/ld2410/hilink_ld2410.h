@@ -22,27 +22,27 @@ enum ld2410_frame_type {
 	ACK_FRAME
 };
 
-struct ld2410_frame {
+struct ld2410_frame_data {
 	uint32_t header;
 	uint16_t body_len;
 	uint8_t body[LD2410_MAX_FRAME_BODYLEN + FRAME_FOOTER_SIZE];
 } __packed;
 
-#define FRAME_HEADER_AND_SIZE_LENGTH (offsetof(struct ld2410_frame, body))
+#define FRAME_HEADER_AND_SIZE_LENGTH (offsetof(struct ld2410_frame_data, body))
 
 struct ld2410_rx_frame {
-	size_t total_bytes_read;
+	size_t byte_count;
 	union {
-		struct ld2410_frame frame;
-		uint8_t raw[2 * sizeof(struct ld2410_frame)];
+		struct ld2410_frame_data frame;
+		uint8_t raw[2 * sizeof(struct ld2410_frame_data)];
 	} data;
 } __packed;
 
 struct ld2410_tx_frame {
 	size_t bytes_remaining;
 	union {
-		struct ld2410_frame frame;
-		uint8_t raw_data[sizeof(struct ld2410_frame)];
+		struct ld2410_frame_data frame;
+		uint8_t raw_data[sizeof(struct ld2410_frame_data)];
 	};
 };
 
