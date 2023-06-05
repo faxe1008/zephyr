@@ -57,9 +57,9 @@ static int find_rx_frame_start(struct ld2410_frame *rx_frame, enum ld2410_frame_
 			break;
 		}
 
-		if (frame_start >= rx_frame->byte_count) {
+		if (frame_start + FRAME_HEADER_SIZE >= rx_frame->byte_count) {
 			/* If the buffer is full shift but leave at least header bytes in buffer */
-			if (frame_start >= sizeof(rx_frame->raw)) {
+			if (frame_start + FRAME_HEADER_SIZE >= sizeof(rx_frame->raw)) {
 				memmove(&rx_frame->raw[0],
 					&rx_frame->raw[sizeof(rx_frame->raw) -
 							    FRAME_HEADER_AND_SIZE_LENGTH - 1],
