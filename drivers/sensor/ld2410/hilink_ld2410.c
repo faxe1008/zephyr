@@ -19,24 +19,24 @@
 LOG_MODULE_REGISTER(LD2410, CONFIG_SENSOR_LOG_LEVEL);
 
 /*
-    Command Frame:
-    +-------------+-----------------+------------+-------------------------+
-    | Header      | Body Length (N) | Command ID | Body      | Footer      |
-    | FD FC FB FA | 2 Bytes         | 2 Bytes    | N-2 Bytes | 04 03 02 01 |
-    +-------------+-----------------+------------+-------------------------+
-
-    Command Response Frame:
-    +-------------+-----------------+---------------------+-----------+-------------+-------------+
-    | Header      | Body Length (N) | Command ID | 0x0100 | ACK       | Body        | Footer      |
-    | FD FC FB FA | 2 Bytes         | 2 Bytes             | 2 Bytes   | N-4 Bytes   | 04 03 02 01 |
-    +-------------+-----------------+---------------------+-----------+-------------+-------------+
-
-    Cyclic Data Frame:
-    +-------------+-----------------+---------------------+-------------+
-    | Header      | Body Length (N) | Body                | Footer      |
-    | F4 F3 F2 F1 | 2 Bytes         | N Bytes             | F8 F7 F6 F5 |
-    +-------------+-----------------+---------------------+-------------+
-*/
+ *   Command Frame:
+ *   +-------------+-----------------+------------+-------------------------+
+ *   | Header      | Body Length (N) | Command ID | Body      | Footer      |
+ *   | FD FC FB FA | 2 Bytes         | 2 Bytes    | N-2 Bytes | 04 03 02 01 |
+ *   +-------------+-----------------+------------+-------------------------+
+ *
+ *   Command Response Frame:
+ *   +-------------+-----------------+---------------------+-----------+-------------+-------------+
+ *   | Header      | Body Length (N) | Command ID | 0x0100 | ACK       | Body        | Footer      |
+ *   | FD FC FB FA | 2 Bytes         | 2 Bytes             | 2 Bytes   | N-4 Bytes   | 04 03 02 01 |
+ *   +-------------+-----------------+---------------------+-----------+-------------+-------------+
+ *
+ *   Cyclic Data Frame:
+ *   +-------------+-----------------+---------------------+-------------+
+ *   | Header      | Body Length (N) | Body                | Footer      |
+ *   | F4 F3 F2 F1 | 2 Bytes         | N Bytes             | F8 F7 F6 F5 |
+ *   +-------------+-----------------+---------------------+-------------+
+ */
 
 const uint32_t DATA_FRAME_HEADER = 0xF1F2F3F4;
 const uint32_t DATA_FRAME_FOOTER = 0xF5F6F7F8;
@@ -517,10 +517,12 @@ static int ld2410_channel_get(const struct device *dev, enum sensor_channel chan
 	return 0;
 }
 
-static const struct sensor_driver_api ld2410_api = {.sample_fetch = &ld2410_sample_fetch,
-						    .channel_get = &ld2410_channel_get,
-						    .attr_get = &ld2410_attr_get,
-						    .attr_set = &ld2410_attr_set};
+static const struct sensor_driver_api ld2410_api = {
+	.sample_fetch = &ld2410_sample_fetch,
+	.channel_get = &ld2410_channel_get,
+	.attr_get = &ld2410_attr_get,
+	.attr_set = &ld2410_attr_set
+};
 
 static int ld2410_init(const struct device *dev)
 {
