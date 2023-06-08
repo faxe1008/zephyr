@@ -49,6 +49,7 @@ const uint32_t CMD_FRAME_FOOTER = 0x01020304;
 #define ACK_BODY_DATA_START          4
 #define BODY_MAGIC_HEADER_BYTE       0xAA
 #define CYCLIC_MAGIC_BODY_FOOTER     0x0055
+#define CYCLIC_WITH_ENGIN_DATA       0x01
 
 enum ld2410_command {
 	ENTER_CONFIG_MODE = 0x00FF,
@@ -385,7 +386,7 @@ int ld2410_attr_get(const struct device *dev, enum sensor_channel chan, enum sen
 
 	switch ((enum sensor_attribute_ld2410)attr) {
 	case SENSOR_ATTR_LD2410_ENGINEERING_MODE:
-		val->val1 = (drv_data->cyclic_data.data_type == 0x01);
+		val->val1 = (drv_data->cyclic_data.data_type == CYCLIC_WITH_ENGIN_DATA);
 		ret = 0;
 		break;
 	case SENSOR_ATTR_LD2410_DISTANCE_RESOLUTION:
@@ -444,7 +445,7 @@ static int ld2410_sample_fetch(const struct device *dev, enum sensor_channel cha
 	}
 	memcpy(&drv_data->cyclic_data, &drv_data->rx_frame.data.body[0],
 	       sizeof(struct ld2410_cyclic_data));
-	in_engineering_mode = drv_data->cyclic_data.data_type == 0x01;
+	in_engineering_mode = drv_data->cyclic_data.data_type == CYCLIC_WITH_ENGIN_DATA;
 
 	if (drv_data->cyclic_data.header_byte != BODY_MAGIC_HEADER_BYTE) {
 		LOG_DBG("No magic header byte found");
@@ -495,7 +496,7 @@ static int ld2410_channel_get(const struct device *dev, enum sensor_channel chan
 		val->val1 = drv_data->cyclic_data.target_type;
 		break;
 	case SENSOR_CHAN_LD2410_MOVING_ENERGY_PER_GATE:
-		if (drv_data->cyclic_data.data_type != 0x01) {
+		if (drv_data->cyclic_data.data_type != CYCLIC_WITH_ENGIN_DATA) {
 			return -ENODATA;
 		}
 		for (int i = 0; i < LD2410_GATE_COUNT; i++) {
@@ -503,7 +504,7 @@ static int ld2410_channel_get(const struct device *dev, enum sensor_channel chan
 		}
 		break;
 	case SENSOR_CHAN_LD2410_STATIONARY_ENERGY_PER_GATE:
-		if (drv_data->cyclic_data.data_type != 0x01) {
+		if (drv_data->cyclic_data.data_type != CYCLIC_WITH_ENGIN_DATA) {
 			return -ENODATA;
 		}
 		for (int i = 0; i < LD2410_GATE_COUNT; i++) {
