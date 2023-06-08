@@ -47,6 +47,8 @@ const uint32_t CMD_FRAME_FOOTER = 0x01020304;
 #define CMD_ID_SIZE                  sizeof(uint16_t)
 #define FRAME_HEADER_AND_SIZE_LENGTH (offsetof(struct ld2410_frame_data, body))
 #define ACK_BODY_DATA_START          4
+#define BODY_MAGIC_HEADER_BYTE       0xAA
+#define CYCLIC_MAGIC_BODY_FOOTER     0x0055
 
 enum ld2410_command {
 	ENTER_CONFIG_MODE = 0x00FF,
@@ -345,7 +347,7 @@ static int read_settings(const struct device *dev)
 
 	if (ret == 0) {
 		/* Check for header byte */
-		if (rx_frame.data.body[ACK_BODY_DATA_START] != 0xAA) {
+		if (rx_frame.data.body[ACK_BODY_DATA_START] != BODY_MAGIC_HEADER_BYTE) {
 			LOG_ERR("Setting read response non matching header byte");
 			return -EBADMSG;
 		}
@@ -436,7 +438,7 @@ static int ld2410_sample_fetch(const struct device *dev, enum sensor_channel cha
 	}
 
 	if (drv_data->rx_frame.data.body_len < sizeof(struct ld2410_cyclic_data)) {
-		LOG_DBG("Unexpected size");
+		LOG_DBG("Unexpected size field");
 		ret = -EBADMSG;
 		goto unlock;
 	}
@@ -444,8 +446,8 @@ static int ld2410_sample_fetch(const struct device *dev, enum sensor_channel cha
 	       sizeof(struct ld2410_cyclic_data));
 	in_engineering_mode = drv_data->cyclic_data.data_type == 0x01;
 
-	if (drv_data->cyclic_data.header_byte != 0xAA) {
-		LOG_DBG("Header byte mismatch");
+	if (drv_data->cyclic_data.header_byte != BODY_MAGIC_HEADER_BYTE) {
+		LOG_DBG("No magic header byte found");
 		ret = -EBADMSG;
 		goto unlock;
 	}
@@ -454,8 +456,8 @@ static int ld2410_sample_fetch(const struct device *dev, enum sensor_channel cha
 		data_end += sizeof(struct ld2410_engineering_data);
 	}
 
-	if (sys_get_le16(&drv_data->rx_frame.data.body[data_end]) != 0x0055) {
-		LOG_DBG("Intrafooter mismatch");
+	if (sys_get_le16(&drv_data->rx_frame.data.body[data_end]) != CYCLIC_MAGIC_BODY_FOOTER) {
+		LOG_DBG("No magic cyclic body footer found");
 		ret = -EBADMSG;
 		goto unlock;
 	}
