@@ -251,8 +251,8 @@ static inline int set_config_mode(const struct device *dev, bool enabled)
 	}
 }
 
-static inline int transceive_config_mode(const struct device *dev, enum ld2410_command command,
-					 uint8_t *data, uint16_t len)
+static inline int transceive_in_cfg_mode(const struct device *dev, enum ld2410_command command,
+					 uint8_t *data, uint16_t len, struct ld2410_frame *rx_frame)
 {
 	int ret;
 	struct ld2410_data *drv_data = dev->data;
@@ -264,6 +264,9 @@ static inline int transceive_config_mode(const struct device *dev, enum ld2410_c
 		goto unlock;
 	}
 	ret = transceive_command(dev, command, data, len);
+	if (rx_frame != NULL && ret == 0) {
+		memcpy(rx_frame, &drv_data->rx_frame, sizeof(struct ld2410_frame));
+	}
 	set_config_mode(dev, false);
 
 unlock:
@@ -274,9 +277,9 @@ unlock:
 static inline int set_engineering_mode(const struct device *dev, bool enabled)
 {
 	if (enabled) {
-		return transceive_config_mode(dev, ENTER_ENGINEERING_MODE, NULL, 0);
+		return transceive_in_cfg_mode(dev, ENTER_ENGINEERING_MODE, NULL, 0, NULL);
 	} else {
-		return transceive_config_mode(dev, LEAVE_CONFIG_MODE, NULL, 0);
+		return transceive_in_cfg_mode(dev, LEAVE_ENGINEERING_MODE, NULL, 0, NULL);
 	}
 }
 
@@ -288,8 +291,9 @@ static inline int set_distance_resolution(const struct device *dev,
 	if (resolution != LD2410_GATE_RESOLUTION_20 && resolution != LD2410_GATE_RESOLUTION_75) {
 		return -EINVAL;
 	}
+
 	sys_put_le16((uint16_t)resolution, payload);
-	return transceive_config_mode(dev, SET_DISTANCE_RESOLUTION, payload, sizeof(payload));
+	return transceive_in_cfg_mode(dev, SET_DISTANCE_RESOLUTION, payload, sizeof(payload), NULL);
 }
 
 static inline int get_distance_resolution(const struct device *dev,
@@ -297,15 +301,13 @@ static inline int get_distance_resolution(const struct device *dev,
 {
 	int ret;
 	struct ld2410_data *drv_data = dev->data;
+	struct ld2410_frame rx_frame = {0};
 
-	k_mutex_lock(&drv_data->lock, K_FOREVER);
-
-	ret = transceive_command(dev, GET_DISTANCE_RESOLUTION, NULL, 0);
+	ret = transceive_in_cfg_mode(dev, GET_DISTANCE_RESOLUTION, NULL, 0, &rx_frame);
 	if (ret == 0) {
-		*resolution = sys_get_le16(&drv_data->rx_frame.data.body[4]);
+		*resolution = sys_get_le16(&rx_frame.data.body[4]);
 	}
 
-	k_mutex_unlock(&drv_data->lock);
 	return ret;
 }
 
@@ -313,30 +315,19 @@ static int read_settings(const struct device *dev)
 {
 	int ret;
 	struct ld2410_data *drv_data = dev->data;
+	struct ld2410_frame rx_frame = {0};
 
-	k_mutex_lock(&drv_data->lock, K_FOREVER);
-
-	ret = set_config_mode(dev, true);
-	if (ret < 0) {
-		goto unlock;
-	}
-
-	ret = transceive_command(dev, READ_SETTINGS, NULL, 0);
+	ret = transceive_in_cfg_mode(dev, READ_SETTINGS, NULL, 0, &rx_frame);
 
 	if (ret == 0) {
-
 		/* Check for header byte */
-		if (drv_data->rx_frame.data.body[4] != 0xAA) {
+		if (rx_frame.data.body[4] != 0xAA) {
 			LOG_ERR("Setting read response non matching header byte");
-			goto unlock;
+			return -EBADMSG;
 		}
-		memcpy(&drv_data->settings, &drv_data->rx_frame.data.body[5],
-		       sizeof(struct ld2410_settings));
+		memcpy(&drv_data->settings, &rx_frame.data.body[5], sizeof(struct ld2410_settings));
 	}
 
-unlock:
-	set_config_mode(dev, false);
-	k_mutex_unlock(&drv_data->lock);
 	return ret;
 }
 
