@@ -2,6 +2,9 @@
  * Copyright (c) 2023 Fabian Blatz
  *
  * SPDX-License-Identifier: Apache-2.0
+ *
+ * Datasheet:
+ * https://dfimg.dfrobot.com/nobody/wiki/3b1c7de28d8343b114c3ab6057f817e2.pdf
  */
 
 #define DT_DRV_COMPAT hilink_ld2410
@@ -15,6 +18,26 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(LD2410, CONFIG_SENSOR_LOG_LEVEL);
 
+/*
+    Command Frame:
+    +-------------+-----------------+------------+-------------------------+
+    | Header      | Body Length (N) | Command ID | Body      | Footer      |
+    | FD FC FB FA | 2 Bytes         | 2 Bytes    | N-2 Bytes | 04 03 02 01 |
+    +-------------+-----------------+------------+-------------------------+
+
+    Command Response Frame:
+    +-------------+-----------------+---------------------+-----------+-------------+-------------+
+    | Header      | Body Length (N) | Command ID | 0x0100 | ACK       | Body        | Footer      |
+    | FD FC FB FA | 2 Bytes         | 2 Bytes             | 2 Bytes   | N-4 Bytes   | 04 03 02 01 |
+    +-------------+-----------------+---------------------+-----------+-------------+-------------+
+
+    Cyclic Data Frame:
+    +-------------+-----------------+---------------------+-------------+
+    | Header      | Body Length (N) | Body                | Footer      |
+    | F4 F3 F2 F1 | 2 Bytes         | N Bytes             | F8 F7 F6 F5 |
+    +-------------+-----------------+---------------------+-------------+
+*/
+
 const uint32_t DATA_FRAME_HEADER = 0xF1F2F3F4;
 const uint32_t DATA_FRAME_FOOTER = 0xF5F6F7F8;
 const uint32_t CMD_FRAME_HEADER = 0xFAFBFCFD;
@@ -23,6 +46,7 @@ const uint32_t CMD_FRAME_FOOTER = 0x01020304;
 #define SERIAL_TIMEOUT_MS            200
 #define CMD_ID_SIZE                  sizeof(uint16_t)
 #define FRAME_HEADER_AND_SIZE_LENGTH (offsetof(struct ld2410_frame_data, body))
+#define ACK_BODY_DATA_START          4
 
 enum ld2410_command {
 	ENTER_CONFIG_MODE = 0x00FF,
@@ -251,8 +275,8 @@ static inline int set_config_mode(const struct device *dev, bool enabled)
 	}
 }
 
-static inline int transceive_in_cfg_mode(const struct device *dev, enum ld2410_command command,
-					 uint8_t *data, uint16_t len, struct ld2410_frame *rx_frame)
+static int transceive_in_cfg_mode(const struct device *dev, enum ld2410_command command,
+				  uint8_t *data, uint16_t len, struct ld2410_frame *rx_frame)
 {
 	int ret;
 	struct ld2410_data *drv_data = dev->data;
@@ -305,7 +329,7 @@ static inline int get_distance_resolution(const struct device *dev,
 
 	ret = transceive_in_cfg_mode(dev, GET_DISTANCE_RESOLUTION, NULL, 0, &rx_frame);
 	if (ret == 0) {
-		*resolution = sys_get_le16(&rx_frame.data.body[4]);
+		*resolution = sys_get_le16(&rx_frame.data.body[ACK_BODY_DATA_START]);
 	}
 
 	return ret;
@@ -321,11 +345,12 @@ static int read_settings(const struct device *dev)
 
 	if (ret == 0) {
 		/* Check for header byte */
-		if (rx_frame.data.body[4] != 0xAA) {
+		if (rx_frame.data.body[ACK_BODY_DATA_START] != 0xAA) {
 			LOG_ERR("Setting read response non matching header byte");
 			return -EBADMSG;
 		}
-		memcpy(&drv_data->settings, &rx_frame.data.body[5], sizeof(struct ld2410_settings));
+		memcpy(&drv_data->settings, &rx_frame.data.body[ACK_BODY_DATA_START + 1],
+		       sizeof(struct ld2410_settings));
 	}
 
 	return ret;
@@ -397,11 +422,11 @@ static int ld2410_sample_fetch(const struct device *dev, enum sensor_channel cha
 
 	ARG_UNUSED(chan);
 
+	k_mutex_lock(&drv_data->lock, K_FOREVER);
+
 	drv_data->rx_frame.byte_count = 0;
 	drv_data->awaited_rx_frame_type = DATA_FRAME;
 	k_sem_reset(&drv_data->rx_sem);
-
-	k_mutex_lock(&drv_data->lock, K_FOREVER);
 	uart_irq_rx_enable(drv_cfg->uart_dev);
 
 	ret = k_sem_take(&drv_data->rx_sem, K_MSEC(SERIAL_TIMEOUT_MS));
