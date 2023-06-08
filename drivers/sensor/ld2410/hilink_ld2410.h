@@ -8,7 +8,6 @@
 #define ZEPHYR_DRIVERS_SENSOR_HILINK_LD2410_H_
 
 #include <zephyr/kernel.h>
-#include <zephyr/drivers/sensor.h>
 #include <zephyr/drivers/uart.h>
 #include <zephyr/drivers/sensor/ld2410.h>
 #include <stdint.h>
