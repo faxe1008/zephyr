@@ -56,10 +56,14 @@ const uint32_t CMD_FRAME_FOOTER = 0x01020304;
 #define MOTION_PARAM_WORD        0x0001
 #define STATIONARY_PARAM_WORD    0x0002
 
+#define MAX_MOV_GATE_PARAM_WORD     0x0000
+#define MAX_STA_GATE_PARAM_WORD     0x0001
+#define PRESENCE_TIMEOUT_PARAM_WORD 0x0002
+
 enum ld2410_command {
 	ENTER_CONFIG_MODE = 0x00FF,
 	LEAVE_CONFIG_MODE = 0x00FE,
-	SET_MAX_DISTANCE_AND_DURATION = 0x0060,
+	SET_MAX_GATES_AND_DURATION = 0x0060,
 	READ_SETTINGS = 0x0061,
 	ENTER_ENGINEERING_MODE = 0x0062,
 	LEAVE_ENGINEERING_MODE = 0x0063,
@@ -405,6 +409,24 @@ unlock:
 	return ret;
 }
 
+static int set_max_gates_and_duration(const struct device *dev, uint8_t max_moving_gate,
+				      uint8_t max_stationary_gate, uint16_t presence_timeout)
+{
+	uint8_t payload[18];
+
+	sys_put_le16(MAX_MOV_GATE_PARAM_WORD, &payload[0]);
+	sys_put_le32(max_moving_gate, &payload[2]);
+
+	sys_put_le16(MAX_STA_GATE_PARAM_WORD, &payload[6]);
+	sys_put_le32(max_stationary_gate, &payload[8]);
+
+	sys_put_le16(PRESENCE_TIMEOUT_PARAM_WORD, &payload[12]);
+	sys_put_le32(presence_timeout, &payload[14]);
+
+	return transceive_in_cfg_mode(dev, SET_MAX_GATES_AND_DURATION, payload, sizeof(payload),
+				      NULL);
+}
+
 int ld2410_attr_set(const struct device *dev, enum sensor_channel chan, enum sensor_attribute attr,
 		    const struct sensor_value *val)
 {
@@ -428,6 +450,17 @@ int ld2410_attr_set(const struct device *dev, enum sensor_channel chan, enum sen
 		}
 		return set_gate_sensitivities(dev, &drv_data->settings.moving_gate_sensitivity[0],
 					      &tmp_sensitivity[0]);
+	case SENSOR_ATTR_LD2410_MAX_MOVING_GATE:
+		return set_max_gates_and_duration(dev, val->val1,
+						  drv_data->settings.max_stationary_gate,
+						  drv_data->settings.presence_timeout);
+	case SENSOR_ATTR_LD2410_MAX_STATIONARY_GATE:
+		return set_max_gates_and_duration(dev, drv_data->settings.max_moving_gate,
+						  val->val1, drv_data->settings.presence_timeout);
+	case SENSOR_ATTR_LD2410_PRESENCE_TIMEOUT:
+		return set_max_gates_and_duration(dev, drv_data->settings.max_moving_gate,
+						  drv_data->settings.max_stationary_gate,
+						  val->val1);
 	default:
 		return -ENOTSUP;
 	}
@@ -463,6 +496,24 @@ int ld2410_attr_get(const struct device *dev, enum sensor_channel chan, enum sen
 			for (int i = 0; i < LD2410_GATE_COUNT; i++) {
 				val[i].val1 = drv_data->settings.stationary_gate_sensitivity[i];
 			}
+		}
+		break;
+	case SENSOR_ATTR_LD2410_MAX_MOVING_GATE:
+		ret = read_settings(dev);
+		if (ret == 0) {
+			val->val1 = drv_data->settings.max_moving_gate;
+		}
+		break;
+	case SENSOR_ATTR_LD2410_MAX_STATIONARY_GATE:
+		ret = read_settings(dev);
+		if (ret == 0) {
+			val->val1 = drv_data->settings.max_stationary_gate;
+		}
+		break;
+	case SENSOR_ATTR_LD2410_PRESENCE_TIMEOUT:
+		ret = read_settings(dev);
+		if (ret == 0) {
+			val->val1 = drv_data->settings.presence_timeout;
 		}
 		break;
 	default:
@@ -634,8 +685,23 @@ static int ld2410_init(const struct device *dev)
 		return ret;
 	}
 
+	ret = set_max_gates_and_duration(dev, drv_data->settings.max_moving_gate,
+					 drv_data->settings.max_stationary_gate,
+					 drv_data->settings.presence_timeout);
+	if(ret < 0){
+		LOG_ERR("Error setting max gates and presence timeout: %d", ret);
+		return ret;
+	}
+
 	return 0;
 }
+
+#define INST_MAX_MOV_GATE(inst)                                                                    \
+	DT_INST_PROP_OR(inst, max_motion_gate, LD2410_DEFAULT_MAX_MOVING_GATE)
+#define INST_MAX_STA_GATE(inst)                                                                    \
+	DT_INST_PROP_OR(inst, max_stationary_gate, LD2410_DEFAULT_MAX_STATIONARY_GATE)
+#define INST_PRESEN_TIMEOUT(inst)                                                                  \
+	DT_INST_PROP_OR(inst, presence_timeout, LD2410_DEFAULT_PRESENCE_TIMEOUT)
 
 #define LD2410_DEFINE(inst)                                                                        \
 	BUILD_ASSERT(DT_INST_PROP_LEN_OR(inst, motion_sensitivity, LD2410_GATE_COUNT) ==           \
@@ -644,6 +710,12 @@ static int ld2410_init(const struct device *dev)
 	BUILD_ASSERT(DT_INST_PROP_LEN_OR(inst, stationary_sensitivity, LD2410_GATE_COUNT) ==       \
 			     LD2410_GATE_COUNT,                                                    \
 		     "ld2410: Error stationary-sensitivity len is different of 9");                \
+	BUILD_ASSERT(INST_MAX_MOV_GATE(inst) >= 2 && INST_MAX_MOV_GATE(inst) < LD2410_GATE_COUNT,  \
+		     "ld2410: Error max-motion-gate needs to be in range 2-8");                    \
+	BUILD_ASSERT(INST_MAX_STA_GATE(inst) >= 2 && INST_MAX_STA_GATE(inst) < LD2410_GATE_COUNT,  \
+		     "ld2410: Error max-stationary-gate needs to be in range 2-8");                \
+	BUILD_ASSERT(INST_PRESEN_TIMEOUT(inst) > 0 && INST_PRESEN_TIMEOUT(inst) <= 65535,          \
+		     "ld2410: Error presence-timeout needs to be in range 0-65535");               \
                                                                                                    \
 	static struct ld2410_data ld2410_data_##inst = {                                           \
 		.settings =                                                                        \
@@ -651,6 +723,9 @@ static int ld2410_init(const struct device *dev)
 				.moving_gate_sensitivity = DT_INST_PROP(inst, motion_sensitivity), \
 				.stationary_gate_sensitivity =                                     \
 					DT_INST_PROP(inst, stationary_sensitivity),                \
+				.max_moving_gate = INST_MAX_MOV_GATE(inst),                        \
+				.max_stationary_gate = INST_MAX_STA_GATE(inst),                    \
+				.presence_timeout = INST_PRESEN_TIMEOUT(inst),                     \
 			},                                                                         \
 	};                                                                                         \
                                                                                                    \

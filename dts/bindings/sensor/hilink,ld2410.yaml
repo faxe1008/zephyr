@@ -37,6 +37,24 @@ properties:
     description: |
       Array of 9 stationary sensitivty values (0-100 per gate)
 
+  max-motion-gate:
+    type: int
+    default: 8
+    description: |
+      The maximum detection range motion gate index (2-8)
+
+  max-stationary-gate:
+    type: int
+    default: 8
+    description: |
+      The maximum detection range stationary gate index (2-8)
+
+  presence-timeout:
+    type: int
+    default: 5
+    description: |
+      Timeout of the presence detection (0-65535 seconds)
+
   int-gpios:
     type: phandle-array
     required: false

@@ -57,11 +57,11 @@ struct ld2410_engineering_data {
 
 struct ld2410_settings {
 	uint8_t maximum_distance_gate;
-	uint8_t max_moving_distance_gate;
-	uint8_t mx_stationary_distance_gate;
+	uint8_t max_moving_gate;
+	uint8_t max_stationary_gate;
 	uint8_t moving_gate_sensitivity[LD2410_GATE_COUNT];
 	uint8_t stationary_gate_sensitivity[LD2410_GATE_COUNT];
-	uint16_t absence_detection_timeout;
+	uint16_t presence_timeout;
 } __packed;
 
 struct ld2410_config {
