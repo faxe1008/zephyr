@@ -13,6 +13,7 @@
 #include <stdbool.h>
 #include <zephyr/sys/byteorder.h>
 #include <zephyr/drivers/sensor.h>
+#include <zephyr/drivers/gpio.h>
 #include "hilink_ld2410.h"
 
 #include <zephyr/logging/log.h>
@@ -522,7 +523,10 @@ static const struct sensor_driver_api ld2410_api = {
 	.sample_fetch = &ld2410_sample_fetch,
 	.channel_get = &ld2410_channel_get,
 	.attr_get = &ld2410_attr_get,
-	.attr_set = &ld2410_attr_set
+	.attr_set = &ld2410_attr_set,
+#ifdef CONFIG_LD2410_TRIGGER
+	.trigger_set = &ld2410_trigger_set,
+#endif
 };
 
 static int ld2410_init(const struct device *dev)
@@ -547,6 +551,14 @@ static int ld2410_init(const struct device *dev)
 
 	uart_irq_callback_user_data_set(drv_cfg->uart_dev, uart_cb_handler, (void *)dev);
 
+#ifdef CONFIG_LD2410_TRIGGER
+	ret = ld2410_init_interrupt(dev);
+	if (ret < 0) {
+		LOG_ERR("Failed to initialize interrupt!");
+		return ret;
+	}
+#endif
+
 	ret = set_engineering_mode(dev, drv_cfg->engineering_mode);
 	if (ret < 0) {
 		LOG_ERR("Error setting engineering mode: %d", ret);
@@ -569,7 +581,8 @@ static int ld2410_init(const struct device *dev)
 		.uart_dev = DEVICE_DT_GET(DT_INST_BUS(inst)),                                      \
 		.engineering_mode = DT_INST_PROP(inst, engineering_mode),                          \
 		.distance_resolution = DT_INST_PROP(inst, distance_resolution),                    \
-	};                                                                                         \
+		IF_ENABLED(CONFIG_LD2410_TRIGGER,                                                  \
+			   (.int_gpios = GPIO_DT_SPEC_INST_GET_OR(inst, int_gpios, {}),))};       \
                                                                                                    \
 	DEVICE_DT_INST_DEFINE(inst, &ld2410_init, NULL, &ld2410_data_##inst,                       \
 			      &ld2410_config_##inst, POST_KERNEL, CONFIG_SENSOR_INIT_PRIORITY,     \

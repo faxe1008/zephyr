@@ -48,6 +48,12 @@ enum sensor_attribute_ld2410 {
 	SENSOR_ATTR_LD2410_STATIONARY_SENSITIVITY_PER_GATE,
 };
 
+enum sensor_trigger_type_ld2410 {
+	/** Trigger fires when a human presence is detected. */
+	SENSOR_TRIG_HUMAN_PRESENCE = SENSOR_TRIG_PRIV_START,
+};
+
+
 #ifdef __cplusplus
 }
 #endif

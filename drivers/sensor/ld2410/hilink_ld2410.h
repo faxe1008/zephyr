@@ -27,7 +27,6 @@ struct ld2410_frame_data {
 	uint8_t body[LD2410_MAX_FRAME_BODYLEN + FRAME_FOOTER_SIZE];
 } __packed;
 
-
 struct ld2410_frame {
 	size_t byte_count;
 	union {
@@ -35,7 +34,6 @@ struct ld2410_frame {
 		uint8_t raw[sizeof(struct ld2410_frame_data)];
 	};
 } __packed;
-
 
 struct ld2410_cyclic_data {
 	uint8_t data_type;
@@ -68,6 +66,9 @@ struct ld2410_settings {
 
 struct ld2410_config {
 	const struct device *uart_dev;
+#ifdef CONFIG_LD2410_TRIGGER
+	struct gpio_dt_spec int_gpios;
+#endif /* CONFIG_LD2410_TRIGGER */
 
 	bool engineering_mode;
 	enum ld2410_gate_resolution distance_resolution;
@@ -85,6 +86,28 @@ struct ld2410_data {
 	struct ld2410_cyclic_data cyclic_data;
 	struct ld2410_engineering_data engineering_data;
 	struct ld2410_settings settings;
+
+#ifdef CONFIG_LD2410_TRIGGER
+	const struct device *gpio_dev;
+	struct gpio_callback gpio_cb;
+
+	sensor_trigger_handler_t th_handler;
+	const struct sensor_trigger *th_trigger;
+#if defined(CONFIG_LD2410_TRIGGER_OWN_THREAD)
+	K_KERNEL_STACK_MEMBER(thread_stack, CONFIG_LD2410_THREAD_STACK_SIZE);
+	struct k_sem gpio_sem;
+	struct k_thread thread;
+#elif defined(CONFIG_LD2410_TRIGGER_GLOBAL_THREAD)
+	struct k_work work;
+#endif
+#endif /* CONFIG_LD2410_TRIGGER */
 };
+
+#ifdef CONFIG_LD2410_TRIGGER
+int ld2410_trigger_set(const struct device *dev, const struct sensor_trigger *trig,
+			   sensor_trigger_handler_t handler);
+
+int ld2410_init_interrupt(const struct device *dev);
+#endif /* CONFIG_LD2410_TRIGGER */
 
 #endif /* ZEPHYR_DRIVERS_SENSOR_HILINK_LD2410_H_ */
