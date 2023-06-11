@@ -24,13 +24,13 @@ properties:
     enum:
       - 0
       - 1
-  
+
   motion-sensitivity:
     type: array
     default: [50, 50, 40, 30, 20, 15, 15, 15, 15]
     description: |
       Array of 9 motion sensitivty values (0-100 per gate)
-  
+
   stationary-sensitivity:
     type: array
     default: [0, 0, 40, 40, 30, 30, 20, 20, 20]

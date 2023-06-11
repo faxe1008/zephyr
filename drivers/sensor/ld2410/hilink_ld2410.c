@@ -370,6 +370,7 @@ static int set_gate_settings(const struct device *dev, const uint8_t *motion_sen
 	int ret;
 	int single_rc;
 	struct ld2410_data *drv_data = dev->data;
+	uint8_t payload[18];
 
 	k_mutex_lock(&drv_data->lock, K_FOREVER);
 
@@ -378,7 +379,6 @@ static int set_gate_settings(const struct device *dev, const uint8_t *motion_sen
 		goto unlock;
 	}
 
-	uint8_t payload[18];
 	sys_put_le16(DISTANCE_GATE_PARAM_WORD, &payload[0]);
 	sys_put_le16(MOTION_PARAM_WORD, &payload[6]);
 	sys_put_le16(STATIONARY_PARAM_WORD, &payload[12]);
@@ -639,7 +639,7 @@ static int ld2410_init(const struct device *dev)
 	static const struct ld2410_config ld2410_config_##inst = {                                 \
 		.uart_dev = DEVICE_DT_GET(DT_INST_BUS(inst)),                                      \
 		IF_ENABLED(CONFIG_LD2410_TRIGGER,                                                  \
-			   (.int_gpios = GPIO_DT_SPEC_INST_GET_OR(inst, int_gpios, {}), ))         \
+			   (.int_gpios = GPIO_DT_SPEC_INST_GET_OR(inst, int_gpios, {}),))         \
 			.engineering_mode = DT_INST_PROP(inst, engineering_mode),                  \
 		.distance_resolution = DT_INST_PROP(inst, distance_resolution),                    \
 		.motion_gate_sensitivity = DT_INST_PROP(inst, motion_sensitivity),                 \
