@@ -52,6 +52,10 @@ const uint32_t CMD_FRAME_FOOTER = 0x01020304;
 #define CYCLIC_MAGIC_BODY_FOOTER     0x0055
 #define CYCLIC_WITH_ENGIN_DATA       0x01
 
+#define DISTANCE_GATE_PARAM_WORD 0x0000
+#define MOTION_PARAM_WORD        0x0001
+#define STATIONARY_PARAM_WORD    0x0002
+
 enum ld2410_command {
 	ENTER_CONFIG_MODE = 0x00FF,
 	LEAVE_CONFIG_MODE = 0x00FE,
@@ -360,6 +364,47 @@ static int read_settings(const struct device *dev)
 	return ret;
 }
 
+static int set_gate_settings(const struct device *dev, const uint8_t *motion_sensitivity,
+			     const uint8_t *stationary_sensitivity)
+{
+	int ret;
+	int single_rc;
+	struct ld2410_data *drv_data = dev->data;
+
+	k_mutex_lock(&drv_data->lock, K_FOREVER);
+
+	ret = set_config_mode(dev, true);
+	if (ret < 0) {
+		goto unlock;
+	}
+
+	uint8_t payload[18];
+	sys_put_le16(DISTANCE_GATE_PARAM_WORD, &payload[0]);
+	sys_put_le16(MOTION_PARAM_WORD, &payload[6]);
+	sys_put_le16(STATIONARY_PARAM_WORD, &payload[12]);
+
+	for (uint8_t i = 0; i < LD2410_GATE_COUNT; i++) {
+		sys_put_le32(i, &payload[2]);
+		sys_put_le32(motion_sensitivity[i], &payload[8]);
+		sys_put_le32(stationary_sensitivity[i], &payload[14]);
+
+		single_rc = transceive_command(dev, SET_GATE_SENSITIVITY_CONFIG, payload,
+					       sizeof(payload));
+
+		if (single_rc < 0) {
+			LOG_ERR("Could not set config for gate: %u", i);
+		}
+
+		ret |= single_rc;
+	}
+
+	set_config_mode(dev, false);
+
+unlock:
+	k_mutex_unlock(&drv_data->lock);
+	return ret;
+}
+
 int ld2410_attr_set(const struct device *dev, enum sensor_channel chan, enum sensor_attribute attr,
 		    const struct sensor_value *val)
 {
@@ -571,6 +616,13 @@ static int ld2410_init(const struct device *dev)
 		return ret;
 	}
 
+	ret = set_gate_settings(dev, &drv_cfg->motion_gate_sensitivity[0],
+				&drv_cfg->stationary_gate_sensitivity[0]);
+	if (ret < 0) {
+		LOG_ERR("Error setting per gate settings: %d", ret);
+		return ret;
+	}
+
 	return 0;
 }
 
@@ -578,9 +630,11 @@ static int ld2410_init(const struct device *dev)
 	static struct ld2410_data ld2410_data_##inst;                                              \
                                                                                                    \
 	BUILD_ASSERT(DT_INST_PROP_LEN_OR(inst, motion_sensitivity, LD2410_GATE_COUNT) ==           \
-		     LD2410_GATE_COUNT, "ld2410: Error motion-sensitivity len is different of 9");                                                           \
+			     LD2410_GATE_COUNT,                                                    \
+		     "ld2410: Error motion-sensitivity len is different of 9");                    \
 	BUILD_ASSERT(DT_INST_PROP_LEN_OR(inst, stationary_sensitivity, LD2410_GATE_COUNT) ==       \
-		     LD2410_GATE_COUNT,  "ld2410: Error stationary-sensitivity len is different of 9");                                                           \
+			     LD2410_GATE_COUNT,                                                    \
+		     "ld2410: Error stationary-sensitivity len is different of 9");                \
                                                                                                    \
 	static const struct ld2410_config ld2410_config_##inst = {                                 \
 		.uart_dev = DEVICE_DT_GET(DT_INST_BUS(inst)),                                      \
@@ -588,8 +642,8 @@ static int ld2410_init(const struct device *dev)
 			   (.int_gpios = GPIO_DT_SPEC_INST_GET_OR(inst, int_gpios, {}), ))         \
 			.engineering_mode = DT_INST_PROP(inst, engineering_mode),                  \
 		.distance_resolution = DT_INST_PROP(inst, distance_resolution),                    \
-		.motion_gate_sensitivity = DT_INST_PROP(inst, motion_sensitivity),           \
-		.stationary_gate_sensitivity = DT_INST_PROP(inst, stationary_sensitivity),   \
+		.motion_gate_sensitivity = DT_INST_PROP(inst, motion_sensitivity),                 \
+		.stationary_gate_sensitivity = DT_INST_PROP(inst, stationary_sensitivity),         \
 	};                                                                                         \
                                                                                                    \
 	DEVICE_DT_INST_DEFINE(inst, &ld2410_init, NULL, &ld2410_data_##inst,                       \
