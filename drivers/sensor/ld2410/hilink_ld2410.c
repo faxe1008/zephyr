@@ -408,15 +408,26 @@ unlock:
 int ld2410_attr_set(const struct device *dev, enum sensor_channel chan, enum sensor_attribute attr,
 		    const struct sensor_value *val)
 {
+	struct ld2410_data *drv_data = dev->data;
+	uint8_t tmp_sensitivity[LD2410_GATE_COUNT] = {0};
+
 	switch ((enum sensor_attribute_ld2410)attr) {
 	case SENSOR_ATTR_LD2410_ENGINEERING_MODE:
 		return set_engineering_mode(dev, val->val1);
 	case SENSOR_ATTR_LD2410_DISTANCE_RESOLUTION:
 		return set_distance_resolution(dev, val->val1);
 	case SENSOR_ATTR_LD2410_MOVING_SENSITIVITY_PER_GATE:
-		break;
+		for (int i = 0; i < LD2410_GATE_COUNT; i++) {
+			tmp_sensitivity[i] = val->val1;
+		}
+		return set_gate_sensitivities(dev, &tmp_sensitivity[0],
+					      &drv_data->settings.stationary_gate_sensitivity[0]);
 	case SENSOR_ATTR_LD2410_STATIONARY_SENSITIVITY_PER_GATE:
-		break;
+		for (int i = 0; i < LD2410_GATE_COUNT; i++) {
+			tmp_sensitivity[i] = val->val1;
+		}
+		return set_gate_sensitivities(dev, &drv_data->settings.moving_gate_sensitivity[0],
+					      &tmp_sensitivity[0]);
 	default:
 		return -ENOTSUP;
 	}
