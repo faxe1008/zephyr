@@ -364,8 +364,8 @@ static int read_settings(const struct device *dev)
 	return ret;
 }
 
-static int set_gate_settings(const struct device *dev, const uint8_t *motion_sensitivity,
-			     const uint8_t *stationary_sensitivity)
+static int set_gate_sensitivities(const struct device *dev, const uint8_t *motion_sensitivity,
+				  const uint8_t *stationary_sensitivity)
 {
 	int ret;
 	int single_rc;
@@ -616,10 +616,10 @@ static int ld2410_init(const struct device *dev)
 		return ret;
 	}
 
-	ret = set_gate_settings(dev, &drv_cfg->motion_gate_sensitivity[0],
-				&drv_cfg->stationary_gate_sensitivity[0]);
+	ret = set_gate_sensitivities(dev, &drv_data->settings.moving_gate_sensitivity[0],
+				     &drv_data->settings.stationary_gate_sensitivity[0]);
 	if (ret < 0) {
-		LOG_ERR("Error setting per gate settings: %d", ret);
+		LOG_ERR("Error setting per gate sensitivity: %d", ret);
 		return ret;
 	}
 
@@ -627,8 +627,6 @@ static int ld2410_init(const struct device *dev)
 }
 
 #define LD2410_DEFINE(inst)                                                                        \
-	static struct ld2410_data ld2410_data_##inst;                                              \
-                                                                                                   \
 	BUILD_ASSERT(DT_INST_PROP_LEN_OR(inst, motion_sensitivity, LD2410_GATE_COUNT) ==           \
 			     LD2410_GATE_COUNT,                                                    \
 		     "ld2410: Error motion-sensitivity len is different of 9");                    \
@@ -636,14 +634,21 @@ static int ld2410_init(const struct device *dev)
 			     LD2410_GATE_COUNT,                                                    \
 		     "ld2410: Error stationary-sensitivity len is different of 9");                \
                                                                                                    \
+	static struct ld2410_data ld2410_data_##inst = {                                           \
+		.settings =                                                                        \
+			{                                                                          \
+				.moving_gate_sensitivity = DT_INST_PROP(inst, motion_sensitivity), \
+				.stationary_gate_sensitivity =                                     \
+					DT_INST_PROP(inst, stationary_sensitivity),                \
+			},                                                                         \
+	};                                                                                         \
+                                                                                                   \
 	static const struct ld2410_config ld2410_config_##inst = {                                 \
 		.uart_dev = DEVICE_DT_GET(DT_INST_BUS(inst)),                                      \
 		IF_ENABLED(CONFIG_LD2410_TRIGGER,                                                  \
-			   (.int_gpios = GPIO_DT_SPEC_INST_GET_OR(inst, int_gpios, {}),))         \
+			   (.int_gpios = GPIO_DT_SPEC_INST_GET_OR(inst, int_gpios, {}), ))         \
 			.engineering_mode = DT_INST_PROP(inst, engineering_mode),                  \
 		.distance_resolution = DT_INST_PROP(inst, distance_resolution),                    \
-		.motion_gate_sensitivity = DT_INST_PROP(inst, motion_sensitivity),                 \
-		.stationary_gate_sensitivity = DT_INST_PROP(inst, stationary_sensitivity),         \
 	};                                                                                         \
                                                                                                    \
 	DEVICE_DT_INST_DEFINE(inst, &ld2410_init, NULL, &ld2410_data_##inst,                       \

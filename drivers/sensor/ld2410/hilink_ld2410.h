@@ -72,9 +72,6 @@ struct ld2410_config {
 
 	bool engineering_mode;
 	enum ld2410_gate_resolution distance_resolution;
-
-	uint8_t motion_gate_sensitivity[LD2410_GATE_COUNT];
-	uint8_t stationary_gate_sensitivity[LD2410_GATE_COUNT];
 };
 
 struct ld2410_data {
