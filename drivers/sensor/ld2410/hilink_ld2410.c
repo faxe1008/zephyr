@@ -588,8 +588,8 @@ static int ld2410_init(const struct device *dev)
 			   (.int_gpios = GPIO_DT_SPEC_INST_GET_OR(inst, int_gpios, {}), ))         \
 			.engineering_mode = DT_INST_PROP(inst, engineering_mode),                  \
 		.distance_resolution = DT_INST_PROP(inst, distance_resolution),                    \
-		.motion_gate_sensitivity = DT_INST_PROP_OR(inst, motion_sensitivity, 0),           \
-		.stationary_gate_sensitivity = DT_INST_PROP_OR(inst, stationary_sensitivity, 0),   \
+		.motion_gate_sensitivity = DT_INST_PROP(inst, motion_sensitivity),           \
+		.stationary_gate_sensitivity = DT_INST_PROP(inst, stationary_sensitivity),   \
 	};                                                                                         \
                                                                                                    \
 	DEVICE_DT_INST_DEFINE(inst, &ld2410_init, NULL, &ld2410_data_##inst,                       \

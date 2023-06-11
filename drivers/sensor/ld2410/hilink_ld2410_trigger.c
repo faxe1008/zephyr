@@ -100,6 +100,7 @@ int ld2410_init_interrupt(const struct device *dev)
 		return rc;
 	}
 
+
 	drv_data->gpio_dev = dev;
 #if defined(CONFIG_LD2410_TRIGGER_OWN_THREAD)
 	k_sem_init(&drv_data->gpio_sem, 0, K_SEM_MAX_LIMIT);
