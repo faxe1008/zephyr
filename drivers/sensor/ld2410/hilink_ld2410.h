@@ -72,6 +72,9 @@ struct ld2410_config {
 
 	bool engineering_mode;
 	enum ld2410_gate_resolution distance_resolution;
+
+	uint8_t motion_gate_sensitivity[LD2410_GATE_COUNT];
+	uint8_t stationary_gate_sensitivity[LD2410_GATE_COUNT];
 };
 
 struct ld2410_data {
@@ -105,7 +108,7 @@ struct ld2410_data {
 
 #ifdef CONFIG_LD2410_TRIGGER
 int ld2410_trigger_set(const struct device *dev, const struct sensor_trigger *trig,
-			   sensor_trigger_handler_t handler);
+		       sensor_trigger_handler_t handler);
 
 int ld2410_init_interrupt(const struct device *dev);
 #endif /* CONFIG_LD2410_TRIGGER */
