@@ -39,25 +39,25 @@ struct ld2410_cyclic_data {
 	uint8_t data_type;
 	uint8_t header_byte;
 	uint8_t target_type;
-	uint16_t moving_target_distance;
-	uint8_t moving_target_energy;
+	uint16_t motion_target_distance;
+	uint8_t motion_target_energy;
 	uint16_t stationary_target_distance;
 	uint8_t stationary_target_energy;
 	uint16_t detection_distance;
 } __packed;
 
 struct ld2410_engineering_data {
-	uint8_t max_moving_gate;
+	uint8_t max_motion_gate;
 	uint8_t max_stationary_gate;
 	uint8_t motion_energy_per_gate[LD2410_GATE_COUNT];
 	uint8_t stationary_energy_per_gate[LD2410_GATE_COUNT];
-	uint8_t max_moving_energy;
+	uint8_t max_motion_energy;
 	uint8_t max_stationary_energy;
 } __packed;
 
 struct ld2410_settings {
 	uint8_t maximum_distance_gate;
-	uint8_t max_moving_gate;
+	uint8_t max_motion_gate;
 	uint8_t max_stationary_gate;
 	uint8_t motion_gate_sensitivity[LD2410_GATE_COUNT];
 	uint8_t stationary_gate_sensitivity[LD2410_GATE_COUNT];

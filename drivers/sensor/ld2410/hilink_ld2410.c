@@ -732,7 +732,7 @@ static int ld2410_init(const struct device *dev)
 	static const struct ld2410_config ld2410_config_##inst = {                                 \
 		.uart_dev = DEVICE_DT_GET(DT_INST_BUS(inst)),                                      \
 		IF_ENABLED(CONFIG_LD2410_TRIGGER,                                                  \
-			   (.int_gpios = GPIO_DT_SPEC_INST_GET_OR(inst, int_gpios, {}), ))         \
+			   (.int_gpios = GPIO_DT_SPEC_INST_GET_OR(inst, int_gpios, {}),))         \
 			.engineering_mode = DT_INST_PROP(inst, engineering_mode),                  \
 		.distance_resolution = DT_INST_PROP(inst, distance_resolution),                    \
 	};                                                                                         \
