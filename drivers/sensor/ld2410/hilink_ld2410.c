@@ -409,13 +409,13 @@ unlock:
 	return ret;
 }
 
-static int set_max_gates_and_duration(const struct device *dev, uint8_t max_moving_gate,
+static int set_max_gates_and_duration(const struct device *dev, uint8_t max_motion_gate,
 				      uint8_t max_stationary_gate, uint16_t presence_timeout)
 {
 	uint8_t payload[18];
 
 	sys_put_le16(MAX_MOV_GATE_PARAM_WORD, &payload[0]);
-	sys_put_le32(max_moving_gate, &payload[2]);
+	sys_put_le32(max_motion_gate, &payload[2]);
 
 	sys_put_le16(MAX_STA_GATE_PARAM_WORD, &payload[6]);
 	sys_put_le32(max_stationary_gate, &payload[8]);
@@ -438,7 +438,7 @@ int ld2410_attr_set(const struct device *dev, enum sensor_channel chan, enum sen
 		return set_engineering_mode(dev, val->val1);
 	case SENSOR_ATTR_LD2410_DISTANCE_RESOLUTION:
 		return set_distance_resolution(dev, val->val1);
-	case SENSOR_ATTR_LD2410_MOVING_SENSITIVITY_PER_GATE:
+	case SENSOR_ATTR_LD2410_MOTION_SENSITIVITY_PER_GATE:
 		for (int i = 0; i < LD2410_GATE_COUNT; i++) {
 			tmp_sensitivity[i] = val->val1;
 		}
@@ -448,17 +448,17 @@ int ld2410_attr_set(const struct device *dev, enum sensor_channel chan, enum sen
 		for (int i = 0; i < LD2410_GATE_COUNT; i++) {
 			tmp_sensitivity[i] = val->val1;
 		}
-		return set_gate_sensitivities(dev, &drv_data->settings.moving_gate_sensitivity[0],
+		return set_gate_sensitivities(dev, &drv_data->settings.motion_gate_sensitivity[0],
 					      &tmp_sensitivity[0]);
-	case SENSOR_ATTR_LD2410_MAX_MOVING_GATE:
+	case SENSOR_ATTR_LD2410_MAX_MOTION_GATE:
 		return set_max_gates_and_duration(dev, val->val1,
 						  drv_data->settings.max_stationary_gate,
 						  drv_data->settings.presence_timeout);
 	case SENSOR_ATTR_LD2410_MAX_STATIONARY_GATE:
-		return set_max_gates_and_duration(dev, drv_data->settings.max_moving_gate,
+		return set_max_gates_and_duration(dev, drv_data->settings.max_motion_gate,
 						  val->val1, drv_data->settings.presence_timeout);
 	case SENSOR_ATTR_LD2410_PRESENCE_TIMEOUT:
-		return set_max_gates_and_duration(dev, drv_data->settings.max_moving_gate,
+		return set_max_gates_and_duration(dev, drv_data->settings.max_motion_gate,
 						  drv_data->settings.max_stationary_gate,
 						  val->val1);
 	default:
@@ -482,11 +482,11 @@ int ld2410_attr_get(const struct device *dev, enum sensor_channel chan, enum sen
 	case SENSOR_ATTR_LD2410_DISTANCE_RESOLUTION:
 		ret = get_distance_resolution(dev, (enum ld2410_gate_resolution *)&val->val1);
 		break;
-	case SENSOR_ATTR_LD2410_MOVING_SENSITIVITY_PER_GATE:
+	case SENSOR_ATTR_LD2410_MOTION_SENSITIVITY_PER_GATE:
 		ret = read_settings(dev);
 		if (ret == 0) {
 			for (int i = 0; i < LD2410_GATE_COUNT; i++) {
-				val[i].val1 = drv_data->settings.moving_gate_sensitivity[i];
+				val[i].val1 = drv_data->settings.motion_gate_sensitivity[i];
 			}
 		}
 		break;
@@ -498,10 +498,10 @@ int ld2410_attr_get(const struct device *dev, enum sensor_channel chan, enum sen
 			}
 		}
 		break;
-	case SENSOR_ATTR_LD2410_MAX_MOVING_GATE:
+	case SENSOR_ATTR_LD2410_MAX_MOTION_GATE:
 		ret = read_settings(dev);
 		if (ret == 0) {
-			val->val1 = drv_data->settings.max_moving_gate;
+			val->val1 = drv_data->settings.max_motion_gate;
 		}
 		break;
 	case SENSOR_ATTR_LD2410_MAX_STATIONARY_GATE:
@@ -588,11 +588,11 @@ static int ld2410_channel_get(const struct device *dev, enum sensor_channel chan
 	struct ld2410_data *drv_data = dev->data;
 
 	switch ((enum sensor_channel_ld2410)chan) {
-	case SENSOR_CHAN_LD2410_MOVING_TARGET_DISTANCE:
-		val->val1 = drv_data->cyclic_data.moving_target_distance;
+	case SENSOR_CHAN_LD2410_MOTION_TARGET_DISTANCE:
+		val->val1 = drv_data->cyclic_data.motion_target_distance;
 		break;
-	case SENSOR_CHAN_LD2410_MOVING_TARGET_ENERGY:
-		val->val1 = drv_data->cyclic_data.moving_target_energy;
+	case SENSOR_CHAN_LD2410_MOTION_TARGET_ENERGY:
+		val->val1 = drv_data->cyclic_data.motion_target_energy;
 		break;
 	case SENSOR_CHAN_LD2410_STATIONARY_TARGET_DISTANCE:
 		val->val1 = drv_data->cyclic_data.stationary_target_distance;
@@ -603,12 +603,12 @@ static int ld2410_channel_get(const struct device *dev, enum sensor_channel chan
 	case SENSOR_CHAN_LD2410_TARGET_TYPE:
 		val->val1 = drv_data->cyclic_data.target_type;
 		break;
-	case SENSOR_CHAN_LD2410_MOVING_ENERGY_PER_GATE:
+	case SENSOR_CHAN_LD2410_MOTION_ENERGY_PER_GATE:
 		if (drv_data->cyclic_data.data_type != CYCLIC_WITH_ENGIN_DATA) {
 			return -ENODATA;
 		}
 		for (int i = 0; i < LD2410_GATE_COUNT; i++) {
-			val[i].val1 = drv_data->engineering_data.moving_energy_per_gate[i];
+			val[i].val1 = drv_data->engineering_data.motion_energy_per_gate[i];
 		}
 		break;
 	case SENSOR_CHAN_LD2410_STATIONARY_ENERGY_PER_GATE:
@@ -678,17 +678,17 @@ static int ld2410_init(const struct device *dev)
 		return ret;
 	}
 
-	ret = set_gate_sensitivities(dev, &drv_data->settings.moving_gate_sensitivity[0],
+	ret = set_gate_sensitivities(dev, &drv_data->settings.motion_gate_sensitivity[0],
 				     &drv_data->settings.stationary_gate_sensitivity[0]);
 	if (ret < 0) {
 		LOG_ERR("Error setting per gate sensitivity: %d", ret);
 		return ret;
 	}
 
-	ret = set_max_gates_and_duration(dev, drv_data->settings.max_moving_gate,
+	ret = set_max_gates_and_duration(dev, drv_data->settings.max_motion_gate,
 					 drv_data->settings.max_stationary_gate,
 					 drv_data->settings.presence_timeout);
-	if(ret < 0){
+	if (ret < 0) {
 		LOG_ERR("Error setting max gates and presence timeout: %d", ret);
 		return ret;
 	}
@@ -697,7 +697,7 @@ static int ld2410_init(const struct device *dev)
 }
 
 #define INST_MAX_MOV_GATE(inst)                                                                    \
-	DT_INST_PROP_OR(inst, max_motion_gate, LD2410_DEFAULT_MAX_MOVING_GATE)
+	DT_INST_PROP_OR(inst, max_motion_gate, LD2410_DEFAULT_MAX_MOTION_GATE)
 #define INST_MAX_STA_GATE(inst)                                                                    \
 	DT_INST_PROP_OR(inst, max_stationary_gate, LD2410_DEFAULT_MAX_STATIONARY_GATE)
 #define INST_PRESEN_TIMEOUT(inst)                                                                  \
@@ -720,10 +720,10 @@ static int ld2410_init(const struct device *dev)
 	static struct ld2410_data ld2410_data_##inst = {                                           \
 		.settings =                                                                        \
 			{                                                                          \
-				.moving_gate_sensitivity = DT_INST_PROP(inst, motion_sensitivity), \
+				.motion_gate_sensitivity = DT_INST_PROP(inst, motion_sensitivity), \
 				.stationary_gate_sensitivity =                                     \
 					DT_INST_PROP(inst, stationary_sensitivity),                \
-				.max_moving_gate = INST_MAX_MOV_GATE(inst),                        \
+				.max_motion_gate = INST_MAX_MOV_GATE(inst),                        \
 				.max_stationary_gate = INST_MAX_STA_GATE(inst),                    \
 				.presence_timeout = INST_PRESEN_TIMEOUT(inst),                     \
 			},                                                                         \
