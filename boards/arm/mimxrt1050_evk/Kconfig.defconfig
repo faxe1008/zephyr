@@ -50,8 +50,9 @@ endif # NETWORKING
 
 if LVGL
 
-config LV_Z_POINTER_KSCAN
-	default y
+choice LV_Z_POINTER_DRIVER
+	default LV_Z_POINTER_KSCAN
+endchoice
 
 config LV_Z_VDB_SIZE
 	default 16

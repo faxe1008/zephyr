@@ -25,8 +25,9 @@ config INPUT
 config INPUT_GT911_INTERRUPT
 	default y
 
-config LV_Z_POINTER_KSCAN
-	default y
+choice LV_Z_POINTER_DRIVER
+	default LV_Z_POINTER_KSCAN
+endchoice
 
 # LVGL should allocate buffers equal to size of display
 config LV_Z_VDB_SIZE

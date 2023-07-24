@@ -135,16 +135,17 @@ config KSCAN
 config INPUT
 	default y
 
-config LV_Z_POINTER_KSCAN
+choice LV_Z_POINTER_DRIVER
+	default LV_Z_POINTER_KSCAN
+endchoice
+
+config LV_Z_POINTER_DRIVER_SWAP_XY
 	default y
 
-config LV_Z_POINTER_KSCAN_SWAP_XY
+config LV_Z_POINTER_DRIVER_INVERT_X
 	default y
 
-config LV_Z_POINTER_KSCAN_INVERT_X
-	default y
-
-config LV_Z_POINTER_KSCAN_INVERT_Y
+config LV_Z_POINTER_DRIVER_INVERT_Y
 	default y
 
 endif # LVGL
