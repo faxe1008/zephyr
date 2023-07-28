@@ -31,6 +31,9 @@ int register_lvgl_indev_driver(lv_indev_type_t indev_type, const struct device *
 #define INPUT_LVGL_EVENT_MSGQ(_inst, _type) event_msgq_##_type##_inst
 #define INPUT_LVGL_DEVICE(_inst)            DEVICE_DT_GET_OR_NULL(DT_INST_PHANDLE(_inst, input))
 
+#define LVGL_COORD_VALID(_coord) (_coord >= LV_COORD_MIN && _coord <= LV_COORD_MAX)
+#define LVGL_KEY_VALID(_key)     (_key >= 0 && _key <= 255)
+
 #define LVGL_INPUT_DECLARE(_inst, _type, _msgq_size)                                               \
 	static void process_input_event(const struct device *dev, struct input_event *evt);        \
 	static void lvgl_input_cb_##_inst(struct input_event *evt)                                 \

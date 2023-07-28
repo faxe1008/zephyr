@@ -1,0 +1,47 @@
+# Copyright 2023 Fabian Blatz <fabianblatz@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  LVGL button indev pseudo-device
+
+  Listens for button input events and routes the
+  lv_indev_data_t to the underlying button lv_indev_t managed by LVGL.
+
+  Needs to be associated to a specific device to listen for events
+  from that device. Example configuration:
+
+  pointer {
+          compatible = "zephyr,input-lvgl-button";
+          input = <&buttons>;
+          input-codes = <INPUT_KEY_0>;
+          lvgl-key = <10>;
+          x-coordinate = <120>;
+          y-coordinate = <120>;
+  };
+
+compatible: "zephyr,input-lvgl-button"
+
+include: zephyr,input-lvgl-common.yaml
+
+properties:
+  input-codes:
+    type: array
+    required: true
+    description: |
+      Array of input event key codes (INPUT_KEY_* or INPUT_BTN_*).
+
+  lvgl-key:
+    type: int
+    required: true
+    description: |
+      The LVGL LV_KEY_* this button corresponds to.
+
+  x-coordinate:
+    type: int
+    description: |
+      X coordinate of the screen the button is assigned to.
+
+  y-coordinate:
+    type: int
+    description: |
+      Y coordinate of the screen the button is assigned to.

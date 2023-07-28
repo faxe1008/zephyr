@@ -12,5 +12,6 @@ if(CONFIG_INPUT_LVGL)
 zephyr_library_sources(input_lvgl_common.c)
 
 zephyr_library_sources_ifdef(CONFIG_INPUT_LVGL_POINTER input_lvgl_pointer.c)
+zephyr_library_sources_ifdef(CONFIG_INPUT_LVGL_BUTTON input_lvgl_button.c)
 
 endif()
