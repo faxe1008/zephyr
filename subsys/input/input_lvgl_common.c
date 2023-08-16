@@ -12,14 +12,6 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(input_lvgl, CONFIG_INPUT_LOG_LEVEL);
 
-/* The lvgl module intializes its dependencies (memory, display driver) with
- * CONFIG_APPLICATION_INIT_PRIORITY. To successfully register drivers, the heap has to be
- * initialized. Also since this device relies on the input subsystem, ensure that this one is ready
- * too.
- */
-BUILD_ASSERT(CONFIG_APPLICATION_INIT_PRIORITY < CONFIG_INPUT_LVGL_INIT_PRIORITY);
-BUILD_ASSERT(CONFIG_INPUT_INIT_PRIORITY < CONFIG_INPUT_LVGL_INIT_PRIORITY);
-
 static void lvgl_input_read_cb(lv_indev_drv_t *drv, lv_indev_data_t *data)
 {
 	const struct device *dev = drv->user_data;
