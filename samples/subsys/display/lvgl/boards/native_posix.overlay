@@ -20,9 +20,9 @@
 		};
 	};
 
-	input_lvgl_pointer {
+	lvgl_pointer_input {
 		status = "okay";
-		compatible = "zephyr,input-lvgl-pointer";
+		compatible = "zephyr,lvgl-pointer-input";
 		input = <&input_sdl_touch>;
 	};
 };

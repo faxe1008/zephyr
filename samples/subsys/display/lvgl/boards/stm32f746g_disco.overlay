@@ -6,8 +6,8 @@
 
 / {
 
-	input_lvgl_pointer {
-		compatible = "zephyr,input-lvgl-pointer";
+	lvgl_pointer_input {
+		compatible = "zephyr,lvgl-pointer-input";
 		input = <&ft5336>;
 	};
 

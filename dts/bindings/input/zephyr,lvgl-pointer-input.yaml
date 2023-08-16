@@ -11,13 +11,13 @@ description: |
   from that device. Example configuration:
 
   pointer {
-          compatible = "zephyr,input-lvgl-pointer";
+          compatible = "zephyr,lvgl-pointer-input";
           input = <&input_sdl_touch>;
   };
 
-compatible: "zephyr,input-lvgl-pointer"
+compatible: "zephyr,lvgl-pointer-input"
 
-include: zephyr,input-lvgl-common.yaml
+include: zephyr,lvgl-common-input.yaml
 
 properties:
   swap-xy:

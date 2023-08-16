@@ -8,14 +8,14 @@
 #include <zephyr/kernel.h>
 #include <zephyr/drivers/display.h>
 
-#include "input_lvgl_common.h"
+#include "lvgl_common_input.h"
 #include <zephyr/logging/log.h>
-LOG_MODULE_REGISTER(input_lvgl, CONFIG_INPUT_LOG_LEVEL);
+LOG_MODULE_DECLARE(lvgl);
 
 static void lvgl_input_read_cb(lv_indev_drv_t *drv, lv_indev_data_t *data)
 {
 	const struct device *dev = drv->user_data;
-	const struct input_lvgl_common_config *cfg = dev->config;
+	const struct lvgl_common_input_config *cfg = dev->config;
 
 	k_msgq_get(cfg->event_msgq, data, K_NO_WAIT);
 	data->continue_reading = k_msgq_num_used_get(cfg->event_msgq) > 0;
@@ -24,10 +24,10 @@ static void lvgl_input_read_cb(lv_indev_drv_t *drv, lv_indev_data_t *data)
 int register_lvgl_indev_driver(lv_indev_type_t indev_type, const struct device *dev)
 {
 	/* Currently no indev binding has its dedicated data
-	 * if that ever changes ensure that `input_lvgl_common_data`
+	 * if that ever changes ensure that `lvgl_common_input_data`
 	 * remains the first member
 	 */
-	struct input_lvgl_common_data *common_data = dev->data;
+	struct lvgl_common_input_data *common_data = dev->data;
 
 	if (common_data == NULL) {
 		return -EINVAL;

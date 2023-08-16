@@ -11,7 +11,7 @@ description: |
   from that device. Example configuration:
 
   pointer {
-          compatible = "zephyr,input-lvgl-button";
+          compatible = "zephyr,lvgl-button-input";
           input = <&buttons>;
           input-codes = <INPUT_KEY_0>;
           lvgl-key = <10>;
@@ -19,9 +19,9 @@ description: |
           y-coordinate = <120>;
   };
 
-compatible: "zephyr,input-lvgl-button"
+compatible: "zephyr,lvgl-button-input"
 
-include: zephyr,input-lvgl-common.yaml
+include: zephyr,lvgl-common-input.yaml
 
 properties:
   input-codes:

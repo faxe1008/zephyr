@@ -86,49 +86,4 @@ config INPUT_LONGPRESS
 	default y
 	depends on DT_HAS_ZEPHYR_INPUT_LONGPRESS_ENABLED
 
-config INPUT_LVGL_POINTER
-	bool "Input lvgl pointer"
-	default y
-	select INPUT_LVGL
-	depends on LVGL
-	depends on DT_HAS_ZEPHYR_INPUT_LVGL_POINTER_ENABLED
-
-if INPUT_LVGL_POINTER
-
-config INPUT_LVGL_POINTER_MSGQ_COUNT
-	int "Message queue size"
-	default 10
-	help
-	  Size of the pointer message queue buffering input events.
-
-endif
-
-config INPUT_LVGL_BUTTON
-	bool "Input lvgl button"
-	default y
-	select INPUT_LVGL
-	depends on LVGL
-	depends on DT_HAS_ZEPHYR_INPUT_LVGL_BUTTON_ENABLED
-
-if INPUT_LVGL_BUTTON
-
-config INPUT_LVGL_BUTTON_MSGQ_COUNT
-	int "Message queue size"
-	default 4
-	help
-	  Size of the button message queue buffering input events.
-
-endif
-
-config INPUT_LVGL
-	bool
-
-if INPUT_LVGL
-
-config INPUT_LVGL_INIT_PRIORITY
-	int
-	default 91
-
-endif
-
 endif # INPUT

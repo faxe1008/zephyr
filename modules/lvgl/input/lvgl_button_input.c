@@ -4,15 +4,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define DT_DRV_COMPAT zephyr_input_lvgl_button
+#define DT_DRV_COMPAT zephyr_lvgl_button_input
 
-#include "input_lvgl_common.h"
+#include "lvgl_common_input.h"
 
 #include <zephyr/logging/log.h>
-LOG_MODULE_DECLARE(input_lvgl);
+LOG_MODULE_DECLARE(lvgl);
 
-struct input_lvgl_button_config {
-	struct input_lvgl_common_config common_config; /* Needs to be first member */
+struct lvgl_button_input_config {
+	struct lvgl_common_input_config common_config; /* Needs to be first member */
 	const uint16_t *input_codes;
 	uint8_t num_codes;
 	lv_key_t key;
@@ -21,8 +21,8 @@ struct input_lvgl_button_config {
 
 static void process_input_event(const struct device *dev, struct input_event *evt)
 {
-	struct input_lvgl_common_data *data = dev->data;
-	const struct input_lvgl_button_config *cfg = dev->config;
+	struct lvgl_common_input_data *data = dev->data;
+	const struct lvgl_button_input_config *cfg = dev->config;
 	uint8_t i;
 
 	for (i = 0; i < cfg->num_codes; i++) {
@@ -44,10 +44,10 @@ static void process_input_event(const struct device *dev, struct input_event *ev
 	}
 }
 
-int input_lvgl_button_init(const struct device *dev)
+int lvgl_button_input_init(const struct device *dev)
 {
-	struct input_lvgl_common_data *data = dev->data;
-	const struct input_lvgl_button_config *cfg = dev->config;
+	struct lvgl_common_input_data *data = dev->data;
+	const struct lvgl_button_input_config *cfg = dev->config;
 	int ret;
 
 	ret = register_lvgl_indev_driver(LV_INDEV_TYPE_BUTTON, dev);
@@ -75,23 +75,23 @@ int input_lvgl_button_init(const struct device *dev)
 	BUILD_ASSERT(LVGL_KEY_VALID(DT_INST_PROP(inst, lvgl_key)),                                 \
 		     "Property lvgl-key needs to be in range [0,255]")
 
-#define INPUT_LVGL_BUTTON_DEFINE(_inst)                                                            \
+#define LVGL_BUTTON_INPUT_DEFINE(_inst)                                                            \
 	ASSERT_PROPERTIES(_inst);                                                                  \
-	LVGL_INPUT_DECLARE(_inst, button, CONFIG_INPUT_LVGL_BUTTON_MSGQ_COUNT);                    \
-	static const uint16_t input_lvgl_button_codes_##_inst[] =                                  \
+	LVGL_INPUT_DECLARE(_inst, button, CONFIG_LV_Z_BUTTON_INPUT_MSGQ_COUNT);                    \
+	static const uint16_t lvgl_button_input_codes_##_inst[] =                                  \
 		DT_INST_PROP(_inst, input_codes);                                                  \
-	static const struct input_lvgl_button_config input_lvgl_button_config##_inst = {           \
-		.common_config.input_dev = INPUT_LVGL_DEVICE(_inst),                               \
-		.common_config.event_msgq = &INPUT_LVGL_EVENT_MSGQ(_inst, button),                 \
-		.input_codes = input_lvgl_button_codes_##_inst,                                    \
+	static const struct lvgl_button_input_config lvgl_button_input_config##_inst = {           \
+		.common_config.input_dev = LVGL_INPUT_DEVICE(_inst),                               \
+		.common_config.event_msgq = &LVGL_INPUT_EVENT_MSGQ(_inst, button),                 \
+		.input_codes = lvgl_button_input_codes_##_inst,                                    \
 		.num_codes = DT_INST_PROP_LEN(_inst, input_codes),                                 \
 		.key = DT_INST_PROP(_inst, lvgl_key),                                              \
 		.coordinate.x = DT_INST_PROP_OR(_inst, x_coordinate, -1),                          \
 		.coordinate.y = DT_INST_PROP_OR(_inst, y_coordinate, -1),                          \
 	};                                                                                         \
-	static struct input_lvgl_common_data input_lvgl_common_data##_inst;                        \
-	DEVICE_DT_INST_DEFINE(_inst, input_lvgl_button_init, NULL, &input_lvgl_common_data##_inst, \
-			      &input_lvgl_button_config##_inst, APPLICATION,                       \
-			      CONFIG_INPUT_LVGL_INIT_PRIORITY, NULL);
+	static struct lvgl_common_input_data lvgl_common_input_data##_inst;                        \
+	DEVICE_DT_INST_DEFINE(_inst, lvgl_button_input_init, NULL, &lvgl_common_input_data##_inst, \
+			      &lvgl_button_input_config##_inst, APPLICATION,                       \
+			      CONFIG_LV_Z_INPUT_INIT_PRIORITY, NULL);
 
-DT_INST_FOREACH_STATUS_OKAY(INPUT_LVGL_BUTTON_DEFINE)
+DT_INST_FOREACH_STATUS_OKAY(LVGL_BUTTON_INPUT_DEFINE)
