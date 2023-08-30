@@ -22,6 +22,11 @@
 		enable-gpios = <&nxp_mipi_connector 32 GPIO_ACTIVE_HIGH>;
 		regulator-boot-on;
 	};
+
+	lvgl_pointer {
+		compatible = "zephyr,lvgl-pointer-input";
+		input = <&touch_controller>;
+	};
 };
 
 &nxp_mipi_i2c {
