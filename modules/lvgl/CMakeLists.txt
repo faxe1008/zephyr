@@ -13,6 +13,7 @@ zephyr_interface_library_named(LVGL)
 zephyr_library()
 
 zephyr_include_directories(${LVGL_DIR}/src/)
+zephyr_include_directories(osal)
 zephyr_include_directories(.)
 
 zephyr_compile_definitions(LV_CONF_INCLUDE_SIMPLE=1)
@@ -217,6 +218,8 @@ zephyr_library_sources(
     lvgl_display_24bit.c
     lvgl_display_32bit.c
     lvgl_display_mono.c
+
+    osal/lv_zephyr_rtos.c
 )
 
 zephyr_library_sources_ifdef(CONFIG_LV_Z_USE_FILESYSTEM lvgl_fs.c)

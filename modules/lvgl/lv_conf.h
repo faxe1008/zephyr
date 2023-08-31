@@ -41,6 +41,11 @@
 #define lv_snprintf        snprintf
 #define lv_vsnprintf       vsnprintf
 
+/* OSAL */
+
+#define LV_USE_OS            LV_OS_CUSTOM
+#define LV_OS_CUSTOM_INCLUDE "lv_zephyr_rtos.h"
+
 /*
  * Needed because of a workaround for a GCC bug,
  * see https://github.com/lvgl/lvgl/issues/3078
