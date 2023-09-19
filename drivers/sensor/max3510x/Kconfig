@@ -1,0 +1,10 @@
+# Copyright (c) 2023 Fabian Blatz
+# SPDX-License-Identifier: Apache-2.0
+
+config MAX3510X
+	bool "MAX3510X Reduced Power Time-To-Digital converter"
+	default y
+	depends on DT_HAS_MAXIM_MAX3510X_ENABLED
+	select SPI
+	help
+	  Enable MAX3510X Reduced Power Time-To-Digital converter.

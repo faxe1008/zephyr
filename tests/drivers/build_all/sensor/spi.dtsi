@@ -287,3 +287,11 @@ test_spi_bmi08x_gyro: bmi08x@24 {
 	gyro-hz = "1000_116";
 	gyro-fs = <1000>;
 };
+
+test_spi_max3510x: max3510x@25 {
+	compatible = "maxim,max3510x";
+	reg = <0x25>;
+	spi-max-frequency = <125000>;
+    irq-gpios = <&test_gpio 0 0>;
+    transducer-distance = <70>;
+};
