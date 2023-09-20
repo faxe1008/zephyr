@@ -1,0 +1,14 @@
+
+&gpio0 {
+    status = "okay";
+};
+
+&arduino_spi {
+	max3510x@0 {
+		compatible = "maxim,max3510x";
+		reg = <0>;
+		spi-max-frequency = <4000000>;
+        irq-gpios = <&gpio1 20 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+        transducer-distance = <70>;
+	};
+};

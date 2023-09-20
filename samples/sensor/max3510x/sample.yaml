@@ -1,0 +1,12 @@
+sample:
+  name: MAX3510X Time to digital converter
+tests:
+  sample.sensor.max3510x:
+    tags: sensors
+    harness: console
+    depends_on: spi
+    harness_config:
+      type: multi_line
+      ordered: true
+      fixture: fixture_spi_max3510x
+    filter: dt_compat_enabled("maxim,max3510x")
