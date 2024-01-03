@@ -1,9 +1,36 @@
+#include <nxp/lpc/LPC55S16JBD100-pinctrl.h>
 
 &gpio0 {
     status = "okay";
 };
 
-&arduino_spi {
+&gpio1 {
+    status = "okay";
+};
+
+&pinctrl {
+
+	pinmux_hs_lspi: pinmux_hs_lspi {
+		group0 {
+			pinmux = <HS_SPI_MOSI_PIO0_26>, /* D11 */
+				<HS_SPI_SSEL1_PIO1_1>,      /* D10 */
+				<HS_SPI_SCK_PIO1_2>,        /* D13 */
+				<HS_SPI_MISO_PIO1_3>;       /* D12 */
+			bias-pull-up;
+			slew-rate = "standard";
+		};
+	};
+
+};
+
+&hs_lspi {
+    status = "okay";
+    pinctrl-0 = <&pinmux_hs_lspi>;
+	pinctrl-names = "default";
+
+    cs-gpios = <&gpio1 1 GPIO_ACTIVE_LOW>;
+    clock-frequency = <4000000>;
+
 	max3510x@0 {
 		compatible = "maxim,max3510x";
 		reg = <0>;

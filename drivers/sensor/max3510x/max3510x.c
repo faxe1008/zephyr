@@ -126,6 +126,7 @@ static int max3510x_write_reg_bitfield(const struct device *dev, uint8_t reg, ui
 	/* Set bitfield value */
 	value = (current_reg_val & ~mask) | value;
 
+	LOG_DBG("New Register[%u]=%u", reg, value);
 	ret = max3510x_write_register(dev, reg, (uint8_t *)&value, sizeof(value));
 	if (ret < 0) {
 		LOG_DBG("Error writing register value");
@@ -152,10 +153,15 @@ static int max3510x_wait_for_reset_complete(const struct device *dev)
 	while (status_reg_val == MAX3510X_REG_INTERRUPT_STATUS_INVALID && retries > 0) {
 		if (max3510x_read_register(dev, MAX3510X_REG_INTERRUPT_STATUS,
 					   (uint8_t *)&status_reg_val,
-					   sizeof(status_reg_val)) == 0) {
-			LOG_DBG("Interrupt status register is valid");
+					   sizeof(status_reg_val)) != 0) {
+			LOG_DBG("Interrupt status register spi transfer success");
+		}
+
+		if (status_reg_val != MAX3510X_REG_INTERRUPT_STATUS_INVALID) {
+			LOG_DBG("Interrupt status register is valid: %u", status_reg_val);
 			return 0;
 		}
+
 		LOG_DBG("Interrupt status register is still invalid");
 		k_sleep(K_MSEC(10));
 		retries--;
@@ -190,7 +196,7 @@ static int max3510x_read_double_reg(const struct device *dev, uint8_t reg_int, d
 static int max3510x_fetch_tofs(const struct device *dev)
 {
 	struct max3510x_data *data = dev->data;
-	const struct max3510x_config *cfg = dev->data;
+	const struct max3510x_config *cfg = dev->config;
 	int ret;
 	uint16_t status_reg_val;
 
