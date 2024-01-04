@@ -11,11 +11,16 @@
 /* SPIM_MISO = 1.14 */
 /* SPIM_MOSI = 1.13 */
 
+/* A = yellow = IRQ_GPIO */
+/* B = green = MOSI */
+/* C = red = MISO */
+/* D = blue = CE */
+
 &arduino_spi {
     status = "okay";
     compatible = "nordic,nrf-spim";
-    cs-gpios = <&gpio1 1 GPIO_ACTIVE_LOW>;
-    clock-frequency = <4000000>;
+    cs-gpios = <&gpio1 4 GPIO_ACTIVE_LOW>;
+    clock-frequency = <20000000>;
     pinctrl-0 = <&spi4_default>;
     pinctrl-1 = <&spi4_sleep>;
     pinctrl-names = "default", "sleep";
@@ -23,8 +28,9 @@
 	max3510x@0 {
 		compatible = "maxim,max3510x";
 		reg = <0>;
-		spi-max-frequency = <4000000>;
-        irq-gpios = <&gpio1 4 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+		spi-max-frequency = <20000000>;
+        irq-gpios = <&gpio1 1 GPIO_ACTIVE_LOW>;
+        rst-gpios = <&gpio1 5 GPIO_ACTIVE_LOW>;
         transducer-distance = <70>;
 	};
 };

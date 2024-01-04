@@ -12,6 +12,11 @@ properties:
     type: phandle-array
     description: |
       Interrupt pin, active low
+  
+  rst-gpios:
+    type: phandle-array
+    description: |
+      Reset pin, active low
 
   ref-frequency:
     type: int

@@ -26,6 +26,7 @@ struct max3510x_fixed_float {
 struct max3510x_config {
 	struct spi_dt_spec spi;
 	const struct gpio_dt_spec srv_irq_gpio;
+    const struct gpio_dt_spec rst_gpio;
 	int ref_freq;
 	int transducer_distance;
 };
@@ -137,12 +138,19 @@ static int max3510x_write_reg_bitfield(const struct device *dev, uint8_t reg, ui
 
 static int max3510x_enable_service_interrupt(const struct device *dev, bool enable)
 {
-	return max3510x_write_reg_bitfield(
+	int ret =  max3510x_write_reg_bitfield(
 		dev, MAX3510X_REG_CALIBRATION_CONTROL,
 		MAX3510X_REG_CALIBRATION_CONTROL_INT_EN_SHIFT,
 		MAX3510X_REG_CALIBRATION_CONTROL_INT_EN_WIDTH,
 		enable ? MAX3510X_REG_CALIBRATION_CONTROL_INT_EN_ENABLED
 		       : MAX3510X_REG_CALIBRATION_CONTROL_INT_EN_DISABLED);
+
+
+    uint16_t reg_val;
+    max3510x_read_register(dev, MAX3510X_REG_CALIBRATION_CONTROL, &reg_val, sizeof(reg_val));
+    LOG_DBG("AFTER WRITE Reg[%u]=%u", MAX3510X_REG_CALIBRATION_CONTROL, reg_val);
+
+    return ret;
 }
 
 static int max3510x_wait_for_reset_complete(const struct device *dev)
@@ -252,7 +260,7 @@ static int max3510x_fetch_tofs(const struct device *dev)
 static int max3510x_sample_fetch(const struct device *dev, enum sensor_channel chan)
 {
 	int ret;
-
+	LOG_DBG("Fetching sample for channel: %u", (uint32_t)chan);
 	switch ((enum sensor_channel_max3510x)chan) {
 	case SENSOR_CHAN_MAX3510X_TOF_DIFF:
 	case SENSOR_CHAN_MAX3510X_TOF_UP:
@@ -292,22 +300,45 @@ static int max3510x_init(const struct device *dev)
 	}
 
 	if (!gpio_is_ready_dt(&config->srv_irq_gpio)) {
-		LOG_ERR("GPIO is not ready");
+		LOG_ERR("SRV GPIO is not ready");
+		return -ENODEV;
+	}
+
+    if (!gpio_is_ready_dt(&config->rst_gpio)) {
+		LOG_ERR("RST GPIO is not ready");
 		return -ENODEV;
 	}
 
 	ret = gpio_pin_configure_dt(&config->srv_irq_gpio, GPIO_INPUT);
 	if (ret < 0) {
-		LOG_ERR("Could not configure gpio");
+		LOG_ERR("Could not configure srv gpio");
+		return ret;
+	}
+
+    ret = gpio_pin_configure_dt(&config->rst_gpio, GPIO_OUTPUT);
+	if (ret < 0) {
+		LOG_ERR("Could not configure rst gpio");
 		return ret;
 	}
 
 	gpio_init_callback(&data->srv_cb, srv_irq_gpio_callback, BIT(config->srv_irq_gpio.pin));
-
 	if (gpio_add_callback(config->srv_irq_gpio.port, &data->srv_cb) < 0) {
 		LOG_ERR("Could not set gpio callback");
 		return -EIO;
 	}
+
+    // Assert RST pin for at least 100ns
+    ret = gpio_pin_set_dt(&config->rst_gpio, 1);
+    if (ret < 0) {
+        LOG_ERR("Error setting RST to active");
+        return ret;
+    }
+    k_sleep(K_NSEC(150));
+    ret = gpio_pin_set_dt(&config->rst_gpio, 0);
+    if (ret < 0) {
+        LOG_ERR("Error setting RST to inactive");
+        return ret;
+    }
 
 	ret = max3510x_wait_for_reset_complete(dev);
 	if (ret < 0) {
@@ -329,6 +360,7 @@ static int max3510x_init(const struct device *dev)
 	static const struct max3510x_config max3510x_config_##n = {                                \
 		.spi = SPI_DT_SPEC_INST_GET(n, SPI_WORD_SET(8) | SPI_TRANSFER_MSB, 0),             \
 		.srv_irq_gpio = GPIO_DT_SPEC_INST_GET(n, irq_gpios),                               \
+        .rst_gpio = GPIO_DT_SPEC_INST_GET(n, rst_gpios),                               \
 		.ref_freq = DT_INST_PROP(n, ref_frequency),                                        \
 		.transducer_distance = DT_INST_PROP(n, transducer_distance),                       \
 	};                                                                                         \
