@@ -13,53 +13,74 @@
 #include <string.h>
 #include <zephyr/kernel.h>
 #include <lvgl_input_device.h>
+#include <zephyr/fs/fs.h>
+#include <zephyr/fs/littlefs.h>
 
 #define LOG_LEVEL CONFIG_LOG_DEFAULT_LEVEL
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(app);
 
-static uint32_t count;
+#define IMG_FILE_PATH "/mnt/img.bin"
 
-#ifdef CONFIG_GPIO
-static struct gpio_dt_spec button_gpio = GPIO_DT_SPEC_GET_OR(
-		DT_ALIAS(sw0), gpios, {0});
-static struct gpio_callback button_callback;
+#define LVGL_PARTITION		storage_partition
+#define LVGL_PARTITION_ID	FIXED_PARTITION_ID(LVGL_PARTITION)
 
-static void button_isr_callback(const struct device *port,
-				struct gpio_callback *cb,
-				uint32_t pins)
+FS_LITTLEFS_DECLARE_DEFAULT_CONFIG(cstorage);
+
+static struct fs_mount_t mnt = {
+	.type = FS_LITTLEFS,
+	.fs_data = &cstorage,
+	.storage_dev = (void *)LVGL_PARTITION_ID,
+	.mnt_point = "/mnt"
+};
+
+
+int setup_fs(void)
 {
-	ARG_UNUSED(port);
-	ARG_UNUSED(cb);
-	ARG_UNUSED(pins);
+	struct fs_file_t img;
+	struct fs_dirent info;
+	int ret;
+	const lv_img_dsc_t *c_img = get_lvgl_img();
 
-	count = 0;
-}
-#endif /* CONFIG_GPIO */
+	ret = fs_mount(&mnt);
+	if (ret < 0) {
+		return ret;
+	}
 
-#ifdef CONFIG_LV_Z_ENCODER_INPUT
-static const struct device *lvgl_encoder =
-	DEVICE_DT_GET(DT_COMPAT_GET_ANY_STATUS_OKAY(zephyr_lvgl_encoder_input));
-#endif /* CONFIG_LV_Z_ENCODER_INPUT */
+	ret = fs_stat(IMG_FILE_PATH, &info);
+	if ((ret == 0) && (info.type == FS_DIR_ENTRY_FILE)) {
+		return ret;
+	}
 
-#ifdef CONFIG_LV_Z_KEYPAD_INPUT
-static const struct device *lvgl_keypad =
-	DEVICE_DT_GET(DT_COMPAT_GET_ANY_STATUS_OKAY(zephyr_lvgl_keypad_input));
-#endif /* CONFIG_LV_Z_KEYPAD_INPUT */
+	fs_file_t_init(&img);
+	ret = fs_open(&img, IMG_FILE_PATH, FS_O_CREATE | FS_O_WRITE);
+	if (ret < 0) {
+		return ret;
+	}
 
-static void lv_btn_click_callback(lv_event_t *e)
-{
-	ARG_UNUSED(e);
+	ret = fs_write(&img, &c_img->header, sizeof(lv_img_header_t));
+	if (ret < 0) {
+		return ret;
+	}
 
-	count = 0;
+	ret = fs_write(&img, c_img->data, c_img->data_size);
+	if (ret < 0) {
+		return ret;
+	}
+
+	ret = fs_close(&img);
+	if (ret < 0) {
+		return ret;
+	}
+	return ret;
 }
 
 int main(void)
 {
-	char count_str[11] = {0};
+	int ret;
 	const struct device *display_dev;
-	lv_obj_t *hello_world_label;
-	lv_obj_t *count_label;
+	lv_obj_t *screen;
+	lv_obj_t *img;
 
 	display_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_display));
 	if (!device_is_ready(display_dev)) {
@@ -67,90 +88,22 @@ int main(void)
 		return 0;
 	}
 
-#ifdef CONFIG_GPIO
-	if (gpio_is_ready_dt(&button_gpio)) {
-		int err;
-
-		err = gpio_pin_configure_dt(&button_gpio, GPIO_INPUT);
-		if (err) {
-			LOG_ERR("failed to configure button gpio: %d", err);
-			return 0;
-		}
-
-		gpio_init_callback(&button_callback, button_isr_callback,
-				   BIT(button_gpio.pin));
-
-		err = gpio_add_callback(button_gpio.port, &button_callback);
-		if (err) {
-			LOG_ERR("failed to add button callback: %d", err);
-			return 0;
-		}
-
-		err = gpio_pin_interrupt_configure_dt(&button_gpio,
-						      GPIO_INT_EDGE_TO_ACTIVE);
-		if (err) {
-			LOG_ERR("failed to enable button callback: %d", err);
-			return 0;
-		}
-	}
-#endif /* CONFIG_GPIO */
-
-#ifdef CONFIG_LV_Z_ENCODER_INPUT
-	lv_obj_t *arc;
-	lv_group_t *arc_group;
-
-	arc = lv_arc_create(lv_scr_act());
-	lv_obj_align(arc, LV_ALIGN_CENTER, 0, -15);
-	lv_obj_set_size(arc, 150, 150);
-
-	arc_group = lv_group_create();
-	lv_group_add_obj(arc_group, arc);
-	lv_indev_set_group(lvgl_input_get_indev(lvgl_encoder), arc_group);
-#endif /* CONFIG_LV_Z_ENCODER_INPUT */
-
-#ifdef CONFIG_LV_Z_KEYPAD_INPUT
-	lv_obj_t *btn_matrix;
-	lv_group_t *btn_matrix_group;
-	static const char *const btnm_map[] = {"1", "2", "3", "4", ""};
-
-	btn_matrix = lv_btnmatrix_create(lv_scr_act());
-	lv_obj_align(btn_matrix, LV_ALIGN_CENTER, 0, 70);
-	lv_btnmatrix_set_map(btn_matrix, (const char **)btnm_map);
-	lv_obj_set_size(btn_matrix, 100, 50);
-
-	btn_matrix_group = lv_group_create();
-	lv_group_add_obj(btn_matrix_group, btn_matrix);
-	lv_indev_set_group(lvgl_input_get_indev(lvgl_keypad), btn_matrix_group);
-#endif /* CONFIG_LV_Z_KEYPAD_INPUT */
-
-	if (IS_ENABLED(CONFIG_LV_Z_POINTER_KSCAN) || IS_ENABLED(CONFIG_LV_Z_POINTER_INPUT)) {
-		lv_obj_t *hello_world_button;
-
-		hello_world_button = lv_btn_create(lv_scr_act());
-		lv_obj_align(hello_world_button, LV_ALIGN_CENTER, 0, -15);
-		lv_obj_add_event_cb(hello_world_button, lv_btn_click_callback, LV_EVENT_CLICKED,
-				    NULL);
-		hello_world_label = lv_label_create(hello_world_button);
-	} else {
-		hello_world_label = lv_label_create(lv_scr_act());
-	}
-
-	lv_label_set_text(hello_world_label, "Hello world!");
-	lv_obj_align(hello_world_label, LV_ALIGN_CENTER, 0, 0);
-
-	count_label = lv_label_create(lv_scr_act());
-	lv_obj_align(count_label, LV_ALIGN_BOTTOM_MID, 0, 0);
-
 	lv_task_handler();
 	display_blanking_off(display_dev);
 
+	ret = setup_fs();
+	if(ret != 0){
+		LOG_ERR("Error setting up FS: %d", ret);
+	}
+
+	screen = lv_obj_create(NULL);
+
+	img = lv_img_create(lv_scr_act());
+	lv_img_set_src(img, IMG_FILE_PATH);
+	lv_obj_align(img, LV_ALIGN_CENTER, 0, 0);
+
 	while (1) {
-		if ((count % 100) == 0U) {
-			sprintf(count_str, "%d", count/100U);
-			lv_label_set_text(count_label, count_str);
-		}
 		lv_task_handler();
-		++count;
 		k_sleep(K_MSEC(10));
 	}
 }
