@@ -1,0 +1,25 @@
+# Backlight drivers
+
+# Copyright (c) 2024 Fabian Blatz <fabianblatz@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+
+menuconfig BACKLIGHT
+	bool "Backlight Drivers"
+	help
+	  Enable backlight drivers (e.g. pwm-backlight)
+
+if BACKLIGHT
+
+config BACKLIGHT_INIT_PRIORITY
+	int "BACKLIGHT devices init priority"
+	default 85
+	help
+	  BACKLIGHT devices initialization priority.
+
+module = BACKLIGHT
+module-str = backlight
+source "subsys/logging/Kconfig.template.log_config"
+
+source "drivers/backlight/Kconfig.pwm"
+
+endif # BACKLIGHT
