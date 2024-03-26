@@ -1,0 +1,43 @@
+# Copyright (c) 2024 Fabian Blatz <fabianblatz@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+
+include: backlight-device.yaml
+
+description: PWM backlight device
+
+compatible: "pwm-backlight"
+
+properties:
+  pwms:
+    type: phandle-array
+    required: true
+    description: |
+      Reference to a PWM instance.
+
+  power-supply:
+    type: phandle
+    description: |
+      Regulator for supply voltage
+
+  enable-gpios:
+    type: phandle-array
+    description: |
+      Contains a single GPIO specifier for the GPIO which enables
+      and disables the backlight.
+
+  post-pwm-on-delay-ms:
+    type: int
+    description: |
+      Delay in ms between setting an initial (non-zero) PWM
+      and enabling the backlight using GPIO.
+
+  pwm-off-delay-ms:
+    type: int
+    description: |
+      Delay in ms between disabling the backlight using GPIO
+      and setting PWM value to 0.
+
+  low-threshold-brightness:
+    type: int
+    description: |
+      Lower threshold for brightness.

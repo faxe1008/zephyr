@@ -1,0 +1,9 @@
+# Copyright (c) 2024 Fabian Blatz
+# SPDX-License-Identifier: Apache-2.0
+
+config PWM_BACKLIGHT
+	bool "PWM backlight driver"
+	default y
+	depends on DT_HAS_PWM_BACKLIGHT_ENABLED
+	help
+	  Enable driver for pwm backlight device.
