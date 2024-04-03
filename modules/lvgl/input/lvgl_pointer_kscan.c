@@ -12,7 +12,7 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_DECLARE(lvgl, CONFIG_LV_Z_LOG_LEVEL);
 
-static lv_indev_drv_t indev_drv;
+static lv_indev_t *indev;
 #define KSCAN_NODE DT_CHOSEN(zephyr_keyboard_scan)
 
 K_MSGQ_DEFINE(kscan_msgq, sizeof(lv_indev_data_t), CONFIG_LV_Z_POINTER_KSCAN_MSGQ_COUNT, 4);
@@ -31,9 +31,9 @@ static void lvgl_pointer_kscan_callback(const struct device *dev, uint32_t row, 
 	}
 }
 
-static void lvgl_pointer_kscan_read(lv_indev_drv_t *drv, lv_indev_data_t *data)
+static void lvgl_pointer_kscan_read(lv_indev_t *indev, lv_indev_data_t *data)
 {
-	lv_disp_t *disp;
+	lv_display_t *disp;
 	struct lvgl_disp_data *disp_data;
 	struct display_capabilities *cap;
 	lv_indev_data_t curr;
@@ -50,13 +50,13 @@ static void lvgl_pointer_kscan_read(lv_indev_drv_t *drv, lv_indev_data_t *data)
 
 	prev = curr;
 
-	disp = lv_disp_get_default();
-	disp_data = disp->driver->user_data;
+	disp = lv_display_get_default();
+	disp_data = lv_display_get_user_data(disp->driver);
 	cap = &disp_data->cap;
 
 	/* adjust kscan coordinates */
 	if (IS_ENABLED(CONFIG_LV_Z_POINTER_KSCAN_SWAP_XY)) {
-		lv_coord_t x;
+		int32_t x;
 
 		x = prev.point.x;
 		prev.point.x = prev.point.y;
@@ -83,7 +83,7 @@ static void lvgl_pointer_kscan_read(lv_indev_drv_t *drv, lv_indev_data_t *data)
 
 	/* rotate touch point to match display rotation */
 	if (cap->current_orientation == DISPLAY_ORIENTATION_ROTATED_90) {
-		lv_coord_t x;
+		int32_t x;
 
 		x = prev.point.x;
 		prev.point.x = prev.point.y;
@@ -92,7 +92,7 @@ static void lvgl_pointer_kscan_read(lv_indev_drv_t *drv, lv_indev_data_t *data)
 		prev.point.x = cap->x_resolution - prev.point.x;
 		prev.point.y = cap->y_resolution - prev.point.y;
 	} else if (cap->current_orientation == DISPLAY_ORIENTATION_ROTATED_270) {
-		lv_coord_t x;
+		int32_t x;
 
 		x = prev.point.x;
 		prev.point.x = cap->x_resolution - prev.point.y;
@@ -132,14 +132,15 @@ static int lvgl_kscan_pointer_init(void)
 		return -ENODEV;
 	}
 
-	lv_indev_drv_init(&indev_drv);
-	indev_drv.type = LV_INDEV_TYPE_POINTER;
-	indev_drv.read_cb = lvgl_pointer_kscan_read;
-
-	if (lv_indev_drv_register(&indev_drv) == NULL) {
-		LOG_ERR("Failed to register input device.");
-		return -EPERM;
+	indev = lv_indev_create();
+	if (indev == NULL) {
+		LOG_ERR("Failed to create input device");
+		return -EINVAL;
 	}
+
+	lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
+	lv_indev_set_read_cb(indev, lvgl_pointer_kscan_read);
+	lv_indev_set_user_data(indev, (void *)dev);
 
 	kscan_enable_callback(kscan_dev);
 
