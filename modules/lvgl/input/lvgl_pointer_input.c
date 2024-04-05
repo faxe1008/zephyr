@@ -52,8 +52,8 @@ static void lvgl_pointer_process_event(const struct device *dev, struct input_ev
 		}
 		break;
 	case INPUT_BTN_TOUCH:
-		data->pending_event.state =
-			evt->value ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
+		data->common_data.pending_event.state =
+			evt->value ? LV_INDEV_STATE_PR : LV_INDEV_STATE_REL;
 		break;
 	}
 
