@@ -35,6 +35,7 @@ struct sdl_display_data {
 	void *read_texture;
 	bool display_on;
 	enum display_pixel_format current_pixel_format;
+	uint16_t rotation;
 	uint8_t *buf;
 	uint8_t *read_buf;
 };
@@ -262,7 +263,7 @@ static int sdl_display_write(const struct device *dev, const uint16_t x,
 
 	sdl_display_write_bottom(desc->height, desc->width, x, y,
 				 disp_data->renderer, disp_data->mutex, disp_data->texture,
-				 disp_data->buf, disp_data->display_on);
+				 disp_data->buf, disp_data->display_on, disp_data->rotation);
 
 	return 0;
 }
@@ -464,6 +465,21 @@ static void sdl_display_get_capabilities(
 		PIXEL_FORMAT_RGB_565 |
 		PIXEL_FORMAT_BGR_565;
 	capabilities->current_pixel_format = disp_data->current_pixel_format;
+	switch(disp_data->rotation) {
+		case 0:
+			break;
+		case 90:
+			capabilities->current_orientation = DISPLAY_ORIENTATION_ROTATED_90;
+			break;
+		case 180:
+			capabilities->current_orientation = DISPLAY_ORIENTATION_ROTATED_180;
+			break;
+		case 270:
+			capabilities->current_orientation = DISPLAY_ORIENTATION_ROTATED_270;
+			break;
+		default:
+			LOG_ERR("Invalid rotation value: %u", disp_data->rotation);
+	}
 	capabilities->screen_info = SCREEN_INFO_MONO_VTILED |
 		(IS_ENABLED(CONFIG_SDL_DISPLAY_MONO_MSB_FIRST) ? SCREEN_INFO_MONO_MSB_FIRST : 0);
 }
@@ -488,6 +504,30 @@ static int sdl_display_set_pixel_format(const struct device *dev,
 	}
 }
 
+static int sdl_display_set_orientation(const struct device* dev, const enum display_orientation orientation) 
+{
+	struct sdl_display_data *disp_data = dev->data;
+
+	switch(orientation){
+		case DISPLAY_ORIENTATION_NORMAL:
+			disp_data->rotation = 0;
+			break;
+		case DISPLAY_ORIENTATION_ROTATED_90:
+			disp_data->rotation = 90;
+			break;
+		case DISPLAY_ORIENTATION_ROTATED_180:
+			disp_data->rotation = 180;
+			break;
+		case DISPLAY_ORIENTATION_ROTATED_270:
+			disp_data->rotation = 270;
+			break;
+		default:
+			return -EINVAL;
+	}
+
+	return 0;
+}
+
 static void sdl_display_cleanup(struct sdl_display_data *disp_data)
 {
 	sdl_display_cleanup_bottom(&disp_data->window, &disp_data->renderer, &disp_data->mutex,
@@ -501,6 +541,7 @@ static const struct display_driver_api sdl_display_api = {
 	.read = sdl_display_read,
 	.get_capabilities = sdl_display_get_capabilities,
 	.set_pixel_format = sdl_display_set_pixel_format,
+	.set_orientation = sdl_display_set_orientation,
 };
 
 #define DISPLAY_SDL_DEFINE(n)						\
@@ -516,6 +557,7 @@ static const struct display_driver_api sdl_display_api = {
 	static struct sdl_display_data sdl_data_##n = {			\
 		.buf = sdl_buf_##n,					\
 		.read_buf = sdl_read_buf_##n,				\
+		.rotation = DT_INST_PROP(n, rotation),			\
 	};								\
 									\
 	DEVICE_DT_INST_DEFINE(n, &sdl_display_init, NULL,		\

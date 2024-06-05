@@ -218,11 +218,14 @@ static int lvgl_init(void)
 #ifdef CONFIG_LV_Z_USE_FILESYSTEM
 	lvgl_fs_init();
 #endif
-
+	lv_disp_drv_init(&disp_drv);
+	disp_drv.rotated = LV_DISP_ROT_90;
+	
 	disp_data.display_dev = display_dev;
 	display_get_capabilities(display_dev, &disp_data.cap);
 
-	lv_disp_drv_init(&disp_drv);
+
+
 	disp_drv.user_data = (void *)&disp_data;
 
 #ifdef CONFIG_LV_Z_FULL_REFRESH

@@ -67,7 +67,7 @@ int sdl_display_init_bottom(uint16_t height, uint16_t width, uint16_t zoom_pct,
 void sdl_display_write_bottom(const uint16_t height, const uint16_t width,
 			      const uint16_t x, const uint16_t y,
 			      void *renderer, void *mutex, void *texture,
-			      uint8_t *buf, bool display_on)
+			      uint8_t *buf, bool display_on, uint16_t rotation)
 {
 	SDL_Rect rect;
 	int err;
@@ -87,7 +87,7 @@ void sdl_display_write_bottom(const uint16_t height, const uint16_t width,
 
 	if (display_on) {
 		SDL_RenderClear(renderer);
-		SDL_RenderCopy(renderer, texture, NULL, NULL);
+		SDL_RenderCopyEx(renderer, texture, NULL, NULL, (double) rotation, NULL, SDL_FLIP_NONE);
 		SDL_RenderPresent(renderer);
 	}
 

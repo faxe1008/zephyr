@@ -6,3 +6,16 @@ description: SDL based emulated display controller
 compatible: "zephyr,sdl-dc"
 
 include: display-controller.yaml
+
+properties:
+  rotation:
+    type: int
+    default: 0
+    enum:
+      - 0
+      - 90
+      - 180
+      - 270
+    description:
+      Display rotation (CW) in degrees.
+      If not defined, rotation is off by default.
