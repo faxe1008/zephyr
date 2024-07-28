@@ -7,6 +7,8 @@ Zephyr 3.3.0
 
 We are pleased to announce the release of Zephyr version 3.3.0.
 
+FOOO
+
 Major enhancements with this release include:
 
 * Introduced :ref:`Fuel Gauge <fuel_gauge_api>` subsystem for battery level

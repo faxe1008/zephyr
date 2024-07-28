@@ -10,6 +10,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-      - uses: faxe1008/action-doc-update@v0.1
+      - uses: faxe1008/action-doc-update@v0.4
         with:
           github-token: ${{ secrets.ZB_TOKEN }}
