@@ -1,0 +1,15 @@
+name: Detect changes to documentation related files and 
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  post_doc_changelog:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: faxe1008/action-doc-update@v0.1
+        with:
+          github-token: ${{ secrets.ZB_TOKEN }}
