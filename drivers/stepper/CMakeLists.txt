@@ -6,4 +6,3 @@ add_subdirectory_ifdef(CONFIG_GPIO_STEPPER gpio_stepper)
 zephyr_syscall_header(${ZEPHYR_BASE}/include/zephyr/drivers/stepper.h)
 
 zephyr_library()
-zephyr_library_property(ALLOW_EMPTY TRUE)

@@ -6,8 +6,6 @@ description: Stepper Motor Controller
 include: base.yaml
 
 properties:
-  reg:
-    type: array
   micro-step-res:
     type: int
     enum:

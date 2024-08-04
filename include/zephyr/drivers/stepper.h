@@ -21,6 +21,7 @@
  */
 
 #include <zephyr/kernel.h>
+#include <zephyr/device.h>
 #include <errno.h>
 
 #ifdef __cplusplus
@@ -31,40 +32,71 @@ extern "C" {
  * @brief Stepper Motor micro step resolution options
  */
 enum micro_step_resolution {
-	STEPPER_FULL_STEP,
+	/** Full step resolution */
+	STEPPER_FULL_STEP = 0,
+	/** 2 micro steps per full step */
 	STEPPER_MICRO_STEP_2,
+	/** 4 micro steps per full step */
 	STEPPER_MICRO_STEP_4,
+	/** 8 micro steps per full step */
 	STEPPER_MICRO_STEP_8,
+	/** 16 micro steps per full step */
 	STEPPER_MICRO_STEP_16,
+	/** 32 micro steps per full step */
 	STEPPER_MICRO_STEP_32,
+	/** 64 micro steps per full step */
 	STEPPER_MICRO_STEP_64,
+	/** 128 micro steps per full step */
 	STEPPER_MICRO_STEP_128,
+	/** 256 micro steps per full step */
 	STEPPER_MICRO_STEP_256,
 };
 
+/**
+ * @brief Stepper Motor direction options
+ */
 enum stepper_direction {
-	STEPPER_DIRECTION_POSITIVE,
+	/** Positive direction */
+	STEPPER_DIRECTION_POSITIVE = 0,
+	/** Negative direction */
 	STEPPER_DIRECTION_NEGATIVE,
 };
 
 /**
+ * @brief Stepper Motor signal results
+ */
+enum stepper_signal_result {
+	/** Target position reached */
+	STEPPER_SIGNAL_TARGET_POSITION_REACHED = 0,
+};
+
+/**
+ * @cond INTERNAL_HIDDEN
+ *
+ * Stepper motor controller driver API definition and system call entry points.
+ *
+ * (Internal use only.)
+ */
+
+/**
  * @brief enable or disable the stepper motor controller.
  *
- * See stepper_enable() for details.
+ * @see stepper_enable() for details.
  */
 typedef int32_t (*stepper_enable_t)(const struct device *dev, bool enable);
 
 /**
  * @brief Move the stepper motor by a given number of micro_steps.
  *
- * See stepper_move() for details.
+ * @see stepper_move() for details.
  */
-typedef int32_t (*stepper_move_t)(const struct device *dev, int32_t micro_steps);
+typedef int32_t (*stepper_move_t)(const struct device *dev, int32_t micro_steps,
+				  struct k_poll_signal *async);
 
 /**
  * @brief Set the max velocity in micro_steps per seconds.
  *
- * See stepper_set_max_velocity() for details.
+ * @see stepper_set_max_velocity() for details.
  */
 typedef int32_t (*stepper_set_max_velocity_t)(const struct device *dev,
 					      uint32_t micro_steps_per_second);
@@ -72,7 +104,7 @@ typedef int32_t (*stepper_set_max_velocity_t)(const struct device *dev,
 /**
  * @brief Set the micro-step resolution
  *
- * See stepper_set_micro_step_res() for details.
+ * @see stepper_set_micro_step_res() for details.
  */
 typedef int32_t (*stepper_set_micro_step_res_t)(const struct device *dev,
 						enum micro_step_resolution resolution);
@@ -80,42 +112,43 @@ typedef int32_t (*stepper_set_micro_step_res_t)(const struct device *dev,
 /**
  * @brief Get the micro-step resolution
  *
- * See stepper_get_micro_step_res() for details.
+ * @see stepper_get_micro_step_res() for details.
  */
 typedef int32_t (*stepper_get_micro_step_res_t)(const struct device *dev,
 						enum micro_step_resolution *resolution);
 /**
  * @brief Set the actual a.k.a reference position of the stepper
  *
- * See stepper_set_actual_position() for details.
+ * @see stepper_set_actual_position() for details.
  */
 typedef int32_t (*stepper_set_actual_position_t)(const struct device *dev, const int32_t value);
 
 /**
  * @brief Get the actual a.k.a reference position of the stepper
  *
- * See stepper_get_actual_position() for details.
+ * @see stepper_get_actual_position() for details.
  */
 typedef int32_t (*stepper_get_actual_position_t)(const struct device *dev, int32_t *value);
 
 /**
  * @brief Set the absolute target position of the stepper
  *
- * See stepper_set_target_position() for details.
+ * @see stepper_set_target_position() for details.
  */
-typedef int32_t (*stepper_set_target_position_t)(const struct device *dev, const int32_t value);
+typedef int32_t (*stepper_set_target_position_t)(const struct device *dev, const int32_t value,
+						 struct k_poll_signal *async);
 
 /**
  * @brief Is the target position fo the stepper reached
  *
- * See stepper_is_moving() for details.
+ * @see stepper_is_moving() for details.
  */
 typedef int32_t (*stepper_is_moving_t)(const struct device *dev, bool *is_moving);
 
 /**
  * @brief Enable constant velocity mode for the stepper with a given velocity
  *
- * See stepper_enable_constant_velocity_mode() for details.
+ * @see stepper_enable_constant_velocity_mode() for details.
  */
 typedef int32_t (*stepper_enable_constant_velocity_mode_t)(const struct device *dev,
 							   const enum stepper_direction direction,
@@ -138,9 +171,15 @@ __subsystem struct stepper_api {
 };
 
 /**
+ * @endcond
+ */
+
+/**
  * @brief Enable or Disable Motor Controller
+ *
  * @param dev pointer to the stepper motor controller instance
  * @param enable Input enable or disable motor controller
+ *
  * @retval <0 Error during Enabling
  * @retval  0 Success
  */
@@ -155,29 +194,40 @@ static inline int32_t z_impl_stepper_enable(const struct device *dev, bool enabl
 
 /**
  * @brief Set the micro_steps to be moved from the current position i.e. relative movement
+ *
  * @param dev pointer to the stepper motor controller instance
  * @param micro_steps target micro_steps to be moved from the current position
+ * @param async Pointer to a valid and ready to be signaled struct
+ *              k_poll_signal. (Note: if NULL this function will not notify
+ *              the end of the transaction, and whether it went successfully
+ *              or not).
+ *
  * @retval <0 Error during Enabling
  * @retval  0 Success
  */
-__syscall int32_t stepper_move(const struct device *dev, int32_t micro_steps);
+__syscall int32_t stepper_move(const struct device *dev, int32_t micro_steps,
+			       struct k_poll_signal *async);
 
-static inline int32_t z_impl_stepper_move(const struct device *dev, int32_t micro_steps)
+static inline int32_t z_impl_stepper_move(const struct device *dev, int32_t micro_steps,
+					  struct k_poll_signal *async)
 {
 	const struct stepper_api *api = (const struct stepper_api *)dev->api;
 
-	return api->move(dev, micro_steps);
+	return api->move(dev, micro_steps, async);
 }
 
 /**
  * @brief Set the target velocity to be reached by the motor
+ *
  * @details For controllers such as DRV8825 where you
  * toggle the STEP Pin, the pulse_length would have to be calculated based on this parameter in the
  * driver. For controllers where velocity can be set, this parameter corresponds to max_velocity
  * @note Setting max velocity does not set the motor into motion, a combination of set_max_velocity
  * and move is required to set the motor into motion.
+ *
  * @param dev pointer to the stepper motor controller instance
  * @param micro_steps_per_second speed in micro_steps per second
+ *
  * @retval <0 Error during Enabling
  * @retval  0 Success
  */
@@ -194,8 +244,10 @@ static inline int32_t z_impl_stepper_set_max_velocity(const struct device *dev,
 
 /**
  * @brief Set the microstep resolution in stepper motor controller
+ *
  * @param dev pointer to the stepper motor controller instance
  * @param resolution microstep resolution
+ *
  * @retval -ENOSYS If not implemented by device driver
  * @retval       0 Success
  */
@@ -215,8 +267,10 @@ static inline int32_t z_impl_stepper_set_micro_step_res(const struct device *dev
 
 /**
  * @brief Get the microstep resolution in stepper motor controller
+ *
  * @param dev pointer to the stepper motor controller instance
  * @param resolution microstep resolution
+ *
  * @retval -ENOSYS If not implemented by device driver
  * @retval       0 Success
  */
@@ -236,8 +290,10 @@ static inline int32_t z_impl_stepper_get_micro_step_res(const struct device *dev
 
 /**
  * @brief Set the actual a.k.a reference position of the stepper
- * @param dev pointer to the stepper motor controller instance
- * @param value actual position to set in micro_steps.
+ *
+ * @param dev Pointer to the stepper motor controller instance.
+ * @param value The reference position to set in micro-steps.
+ *
  * @retval -ENOSYS If not implemented by device driver
  * @retval       0 Success
  */
@@ -256,8 +312,10 @@ static inline int32_t z_impl_stepper_set_actual_position(const struct device *de
 
 /**
  * @brief Get the actual a.k.a reference position of the stepper
+ *
  * @param dev pointer to the stepper motor controller instance
  * @param value The actual position to get in micro_steps
+ *
  * @retval -ENOSYS If not implemented by device driver
  * @retval       0 Success
  */
@@ -275,28 +333,38 @@ static inline int32_t z_impl_stepper_get_actual_position(const struct device *de
 
 /**
  * @brief Set the absolute target position of the stepper
+ *
  * @param dev pointer to the stepper motor controller instance
  * @param value target position to set in micro_steps
+ * @param async Pointer to a valid and ready to be signaled struct
+ *              k_poll_signal. If changing the target position
+ *              triggers stepper movement, this can be used to await
+ *              the end of the transaction. (Note: can be left NULL)
+ *
  * @retval -ENOSYS If not implemented by device driver
  * @retval       0 Success
  */
-__syscall int32_t stepper_set_target_position(const struct device *dev, const int32_t value);
+__syscall int32_t stepper_set_target_position(const struct device *dev, const int32_t value,
+					      struct k_poll_signal *async);
 
 static inline int32_t z_impl_stepper_set_target_position(const struct device *dev,
-							 const int32_t value)
+							 const int32_t value,
+							 struct k_poll_signal *async)
 {
 	const struct stepper_api *api = (const struct stepper_api *)dev->api;
 
 	if (api->set_target_position == NULL) {
 		return -ENOSYS;
 	}
-	return api->set_target_position(dev, value);
+	return api->set_target_position(dev, value, async);
 }
 
 /**
  * @brief Check if the stepper motor is currently moving
+ *
  * @param dev pointer to the stepper motor controller instance
  * @param is_moving Pointer to a boolean to store the moving status of the stepper motor
+ *
  * @retval -ENOSYS If not implemented by device driver
  * @retval       0 Success
  */
@@ -314,14 +382,18 @@ static inline int32_t z_impl_stepper_is_moving(const struct device *dev, bool *i
 
 /**
  * @brief Enable constant velocity mode for the stepper with a given velocity
+ *
  * @details activate constant velocity mode with the given velocity in micro_steps_per_second.
  * If velocity > 0, motor shall be set into motion and run incessantly until and unless stalled or
  * stopped using some other command, for instance, motor_enable(false).
+ *
  * @param dev pointer to the stepper motor controller instance
  * @param direction The direction to set
- * @param value The velocity to set
- *		> 0: Enable constant velocity mode with the given velocity in a given direction
- *		  0: Disable constant velocity mode
+ * @param value The velocity to set in steps per second where one step is dependent on the current
+ * microstepping resolution:
+ * > 0: Enable constant velocity mode with the given velocity in a given direction
+ * 0: Disable constant velocity mode
+ *
  * @retval -ENOSYS If not implemented by device driver
  * @retval       0 Success
  */
