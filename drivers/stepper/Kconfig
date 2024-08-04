@@ -20,6 +20,6 @@ config STEPPER_INIT_PRIORITY
 
 comment "Stepper Drivers"
 
-rsource "gpio_stepper/Kconfig"
+rsource "Kconfig.gpio"
 
 endif

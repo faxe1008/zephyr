@@ -5,6 +5,8 @@ menu "GPIO STEPPER Driver"
 
 config GPIO_STEPPER
 	bool "Activate driver for GPIO_STEPPER_MOTOR_CONTROLLER"
+	depends on DT_HAS_GPIO_STEPPER_ENABLED
+	default y
 	help
 	  GPIO_STEPPER_MOTOR_CONTROLLER driver for stepper motor control
 
