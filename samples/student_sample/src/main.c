@@ -2,9 +2,10 @@
 #include <zephyr/device.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/sys/printk.h>
+#include <zephyr/sys/mutex.h>
 
 /* Configuration for the GPIO button using DT_ALIAS */
-#define SW0_NODE	DT_ALIAS(sw0)
+#define SW0_NODE    DT_ALIAS(sw0)
 
 #if !DT_NODE_HAS_STATUS(SW0_NODE, okay)
 #error "Unsupported board: sw0 devicetree alias is not defined"
@@ -13,26 +14,32 @@
 static const struct gpio_dt_spec button = GPIO_DT_SPEC_GET_OR(SW0_NODE, gpios, {0});
 static struct gpio_callback button_cb_data;
 static volatile int shared_counter = 0;
+static struct k_mutex counter_mutex;  // Define a mutex
 
 /* ISR for button press */
 void button_pressed_isr(const struct device *dev, struct gpio_callback *cb, uint32_t pins)
 {
-    int temp_counter = shared_counter;
-    temp_counter++;
-    k_busy_wait(500); // Introduce a small delay
-    shared_counter = temp_counter;
-    printk("ISR incremented counter to:         %d\n", shared_counter);
+    if (k_mutex_lock(&counter_mutex, K_NO_WAIT) == 0) {
+        int temp_counter = shared_counter;
+        temp_counter++;
+        k_busy_wait(500); // Introduce a small delay
+        shared_counter = temp_counter;
+        printk("ISR incremented counter to:         %d\n", shared_counter);
+        k_mutex_unlock(&counter_mutex);  // Unlock the mutex after modifying the counter
+    }
 }
 
 /* Thread to periodically increment and print the counter value */
 void increment_thread_entry(void)
 {
     while (1) {
+        k_mutex_lock(&counter_mutex, K_FOREVER);  // Lock the mutex
         int temp_counter = shared_counter;
         temp_counter++;
         k_sleep(K_SECONDS(1)); // Introduce a larger delay
         shared_counter = temp_counter;
         printk("Main thread incremented counter to: %d\n", shared_counter);
+        k_mutex_unlock(&counter_mutex);  // Unlock the mutex
         k_sleep(K_SECONDS(1));
     }
 }
@@ -40,6 +47,8 @@ void increment_thread_entry(void)
 int main(void)
 {
     int ret;
+
+    k_mutex_init(&counter_mutex);  // Initialize the mutex
 
     if (!gpio_is_ready_dt(&button)) {
         printk("Error: button device %s is not ready\n", button.port->name);
@@ -70,4 +79,5 @@ int main(void)
     }
 }
 
+/* Define the increment thread */
 K_THREAD_DEFINE(increment_thread, 1024, increment_thread_entry, NULL, NULL, NULL, 3, 0, 0);
