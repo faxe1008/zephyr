@@ -39,6 +39,28 @@ typedef struct {
 #ifndef VL53L5CX_NB_TARGET_PER_ZONE
 #define VL53L5CX_NB_TARGET_PER_ZONE (1U)
 #endif
+
+/**
+ * @brief Macro that defines buffer attributes for the VL53L5CX driver,
+ * adjusting memory alignment and buffer section placement.
+ *
+ * If CONFIG_VL53L5CX_BUFFER_CUSTOM_SECTION is defined, VL53L5CX_BUF_ATTRIBUTES
+ * assigns the buffer to a specific section, .vl53l5cx_buf, in memory. This
+ * can be useful if custom section placement is needed for specific memory
+ * management requirements on the platform. The alignment of the buffer is
+ * controlled by the CONFIG_VL53L5CX_BUFFER_ALIGN configuration parameter.
+ *
+ * If CONFIG_VL53L5CX_BUFFER_CUSTOM_SECTION is not defined, VL53L5CX_BUF_ATTRIBUTES
+ * will only ensure that the buffer is aligned according to CONFIG_VL53L5CX_BUFFER_ALIGN
+ * but without placing it in a custom section.
+ */
+#ifdef CONFIG_VL53L5CX_BUFFER_CUSTOM_SECTION
+#define VL53L5CX_BUF_ATTRIBUTES                                                                    \
+	Z_GENERIC_SECTION(.vl53l5cx_buf) __aligned(CONFIG_VL53L5CX_BUFFER_ALIGN)
+#else
+#define VL53L5CX_BUF_ATTRIBUTES __aligned(CONFIG_VL53L5CX_BUFFER_ALIGN)
+#endif
+
 /*
  * @brief All macro below are used to configure the sensor output. User can
  * define some macros if he wants to disable selected output, in order to reduce

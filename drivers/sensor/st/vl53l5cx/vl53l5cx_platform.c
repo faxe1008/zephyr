@@ -24,15 +24,16 @@ uint8_t WrByte(VL53L5CX_Platform *p_platform, uint16_t RegisterAdress, uint8_t v
 uint8_t WrMulti(VL53L5CX_Platform *p_platform, uint16_t RegisterAdress, uint8_t *p_values,
 		uint32_t size)
 {
-	uint8_t buffer[size + 2];
+	RegisterAdress = sys_cpu_to_be16(RegisterAdress);
 
-	/* To be able to write to the 16-bit registers/addresses on the vl53l1x */
-	buffer[1] = (uint8_t)(RegisterAdress & 0x00ff);
-	buffer[0] = (uint8_t)((RegisterAdress & 0xff00) >> 8);
+	struct i2c_msg msg[2] = {
+		{.buf = (uint8_t *)&RegisterAdress,
+		 .len = sizeof(RegisterAdress),
+		 .flags = I2C_MSG_WRITE},
+		{.buf = p_values, .len = size, .flags = I2C_MSG_WRITE | I2C_MSG_STOP},
+	};
 
-	memcpy(&buffer[2], p_values, size);
-
-	if (i2c_write_dt(&p_platform->i2c, buffer, size + 2) < 0) {
+	if (i2c_transfer_dt(&p_platform->i2c, msg, size) < 0) {
 		return VL53L5CX_STATUS_ERROR;
 	}
 
