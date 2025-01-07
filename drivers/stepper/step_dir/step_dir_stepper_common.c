@@ -228,7 +228,7 @@ int step_dir_stepper_common_move_by(const struct device *dev, const int32_t micr
 	struct step_dir_stepper_common_data *data = dev->data;
 	const struct step_dir_stepper_common_config *config = dev->config;
 
-	if (data->max_velocity == 0) {
+	if (data->min_ticks_per_step == 0) {
 		LOG_ERR("Velocity not set or invalid velocity set");
 		return -EINVAL;
 	}
@@ -236,7 +236,7 @@ int step_dir_stepper_common_move_by(const struct device *dev, const int32_t micr
 	K_SPINLOCK(&data->lock) {
 		data->run_mode = STEPPER_RUN_MODE_POSITION;
 		data->step_count = micro_steps;
-		config->timing_source->update(dev, data->max_velocity);
+		config->timing_source->update(dev, data->min_ticks_per_step);
 		update_direction_from_step_count(dev);
 		config->timing_source->start(dev);
 	}
@@ -260,7 +260,7 @@ int step_dir_stepper_common_set_max_velocity(const struct device *dev, const uin
 	}
 
 	K_SPINLOCK(&data->lock) {
-		data->max_velocity = velocity;
+		data->min_ticks_per_step = config->timing_source->velocity_to_ticks(dev, velocity);
 		config->timing_source->update(dev, velocity);
 	}
 
@@ -294,7 +294,7 @@ int step_dir_stepper_common_move_to(const struct device *dev, const int32_t valu
 	struct step_dir_stepper_common_data *data = dev->data;
 	const struct step_dir_stepper_common_config *config = dev->config;
 
-	if (data->max_velocity == 0) {
+	if (data->min_ticks_per_step == 0) {
 		LOG_ERR("Velocity not set or invalid velocity set");
 		return -EINVAL;
 	}
@@ -302,7 +302,7 @@ int step_dir_stepper_common_move_to(const struct device *dev, const int32_t valu
 	K_SPINLOCK(&data->lock) {
 		data->run_mode = STEPPER_RUN_MODE_POSITION;
 		data->step_count = value - data->actual_position;
-		config->timing_source->update(dev, data->max_velocity);
+		config->timing_source->update(dev, data->min_ticks_per_step);
 		update_direction_from_step_count(dev);
 		config->timing_source->start(dev);
 	}
@@ -327,8 +327,8 @@ int step_dir_stepper_common_run(const struct device *dev, const enum stepper_dir
 	K_SPINLOCK(&data->lock) {
 		data->run_mode = STEPPER_RUN_MODE_VELOCITY;
 		data->direction = direction;
-		data->max_velocity = velocity;
-		config->timing_source->update(dev, velocity);
+		data->min_ticks_per_step = config->timing_source->velocity_to_ticks(dev, velocity);
+		config->timing_source->update(dev, data->min_ticks_per_step);
 		if (velocity != 0) {
 			config->timing_source->start(dev);
 		} else {

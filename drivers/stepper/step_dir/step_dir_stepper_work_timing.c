@@ -10,11 +10,11 @@ static k_timeout_t stepper_movement_delay(const struct device *dev)
 {
 	const struct step_dir_stepper_common_data *data = dev->data;
 
-	if (data->max_velocity == 0) {
+	if (data->min_ticks_per_step == 0) {
 		return K_FOREVER;
 	}
 
-	return K_USEC(USEC_PER_SEC / data->max_velocity);
+	return K_USEC(k_ticks_to_us_ceil32(data->min_ticks_per_step));
 }
 
 static void stepper_work_step_handler(struct k_work *work)
@@ -69,9 +69,15 @@ bool step_work_timing_source_is_running(const struct device *dev)
 	return k_work_delayable_is_pending(&data->stepper_dwork);
 }
 
+uint32_t step_work_timing_source_velocity_to_ticks(const struct device *dev, uint32_t velocity)
+{
+	return k_us_to_ticks_ceil32(velocity / USEC_PER_SEC);
+}
+
 const struct stepper_timing_source_api step_work_timing_source_api = {
 	.init = step_work_timing_source_init,
 	.update = step_work_timing_source_update,
+	.velocity_to_ticks = step_work_timing_source_velocity_to_ticks,
 	.start = step_work_timing_source_start,
 	.needs_reschedule = step_work_timing_source_needs_reschedule,
 	.stop = step_work_timing_source_stop,

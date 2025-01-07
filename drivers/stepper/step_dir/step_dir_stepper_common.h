@@ -70,7 +70,7 @@ struct step_dir_stepper_common_data {
 	enum stepper_direction direction;
 	enum stepper_run_mode run_mode;
 	int32_t actual_position;
-	uint32_t max_velocity;
+	uint32_t min_ticks_per_step;
 	int32_t step_count;
 	stepper_event_callback_t callback;
 	void *event_cb_user_data;

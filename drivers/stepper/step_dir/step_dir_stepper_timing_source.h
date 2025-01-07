@@ -20,10 +20,22 @@ typedef int (*stepper_timing_source_init)(const struct device *dev);
  * @brief Update the stepper timing source.
  *
  * @param dev Pointer to the device structure.
- * @param velocity Velocity in microsteps per second.
+ * @param ticks The number of ticks (in timing source context) to wait at least before the next
+ * step.
  * @return 0 on success, or a negative error code on failure.
  */
-typedef int (*stepper_timing_source_update)(const struct device *dev, uint32_t velocity);
+typedef int (*stepper_timing_source_update)(const struct device *dev, uint32_t ticks);
+
+/**
+ * @brief Convert a velocity in microsteps per second to the number of ticks
+ *        required for the timing source.
+ *
+ * @param dev Pointer to the device structure.
+ * @param velocity Velocity in microsteps per second.
+ * @return The number of ticks required for the timing source.
+ */
+typedef uint32_t (*stepper_timing_source_velocity_to_ticks)(const struct device *dev,
+							    uint32_t velocity);
 
 /**
  * @brief Start the stepper timing source.
@@ -64,6 +76,7 @@ typedef bool (*stepper_timing_source_is_running)(const struct device *dev);
 struct stepper_timing_source_api {
 	stepper_timing_source_init init;
 	stepper_timing_source_update update;
+	stepper_timing_source_velocity_to_ticks velocity_to_ticks;
 	stepper_timing_source_start start;
 	stepper_timing_sources_requires_reschedule needs_reschedule;
 	stepper_timing_source_stop stop;

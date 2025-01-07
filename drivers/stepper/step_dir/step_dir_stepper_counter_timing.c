@@ -27,8 +27,7 @@ int step_counter_timing_source_update(const struct device *dev, const uint32_t v
 		return -EINVAL;
 	}
 
-	data->counter_top_cfg.ticks =
-		DIV_ROUND_UP(counter_us_to_ticks(config->counter, USEC_PER_SEC), velocity);
+	data->counter_top_cfg.ticks = data->min_ticks_per_step;
 
 	/* Lock interrupts while modifying counter settings */
 	int key = irq_lock();
@@ -92,6 +91,18 @@ bool step_counter_timing_source_is_running(const struct device *dev)
 	return data->counter_running;
 }
 
+uint32_t step_counter_timing_source_velocity_to_ticks(const struct device *dev, uint32_t velocity)
+{
+	const struct step_dir_stepper_common_config *config = dev->config;
+	uint32_t frequency = counter_get_frequency(config->counter);
+
+	if (velocity == 0) {
+		return 0;
+	}
+
+	return DIV_ROUND_UP(frequency, velocity);
+}
+
 int step_counter_timing_source_init(const struct device *dev)
 {
 	const struct step_dir_stepper_common_config *config = dev->config;
@@ -113,6 +124,7 @@ int step_counter_timing_source_init(const struct device *dev)
 const struct stepper_timing_source_api step_counter_timing_source_api = {
 	.init = step_counter_timing_source_init,
 	.update = step_counter_timing_source_update,
+	.velocity_to_ticks = step_counter_timing_source_velocity_to_ticks,
 	.start = step_counter_timing_source_start,
 	.needs_reschedule = step_counter_timing_source_needs_reschedule,
 	.stop = step_counter_timing_source_stop,
