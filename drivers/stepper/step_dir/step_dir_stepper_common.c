@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <zephyr/drivers/stepper/stepper_step_dir.h>
 #include "step_dir_stepper_common.h"
 
 #include <zephyr/logging/log.h>
@@ -321,22 +322,10 @@ int step_dir_stepper_common_is_moving(const struct device *dev, bool *is_moving)
 int step_dir_stepper_common_run(const struct device *dev, const enum stepper_direction direction,
 				const uint32_t velocity)
 {
-	struct step_dir_stepper_common_data *data = dev->data;
 	const struct step_dir_stepper_common_config *config = dev->config;
+	uint32_t ticks = config->timing_source->velocity_to_ticks(dev, velocity);
 
-	K_SPINLOCK(&data->lock) {
-		data->run_mode = STEPPER_RUN_MODE_VELOCITY;
-		data->direction = direction;
-		data->min_ticks_per_step = config->timing_source->velocity_to_ticks(dev, velocity);
-		config->timing_source->update(dev, data->min_ticks_per_step);
-		if (velocity != 0) {
-			config->timing_source->start(dev);
-		} else {
-			config->timing_source->stop(dev);
-		}
-	}
-
-	return 0;
+	return step_dir_stepper_run_ticks(dev, direction, ticks);
 }
 
 int step_dir_stepper_common_set_event_callback(const struct device *dev,
@@ -346,5 +335,44 @@ int step_dir_stepper_common_set_event_callback(const struct device *dev,
 
 	data->callback = callback;
 	data->event_cb_user_data = user_data;
+	return 0;
+}
+
+int step_dir_stepper_run_ticks(const struct device *dev, enum stepper_direction direction,
+			       uint32_t ticks)
+{
+	struct step_dir_stepper_common_data *data = dev->data;
+	const struct step_dir_stepper_common_config *config = dev->config;
+
+	K_SPINLOCK(&data->lock) {
+		data->run_mode = STEPPER_RUN_MODE_VELOCITY;
+		data->direction = direction;
+		data->min_ticks_per_step = ticks;
+		config->timing_source->update(dev, data->min_ticks_per_step);
+		if (data->min_ticks_per_step != 0) {
+			config->timing_source->start(dev);
+		} else {
+			config->timing_source->stop(dev);
+		}
+	}
+
+	return 0;
+}
+
+int step_dir_stepper_set_min_step_ticks(const struct device *dev, uint32_t ticks)
+{
+	struct step_dir_stepper_common_data *data = dev->data;
+	const struct step_dir_stepper_common_config *config = dev->config;
+
+	if (ticks == 0) {
+		LOG_ERR("Invalid ticks value");
+		return -EINVAL;
+	}
+
+	K_SPINLOCK(&data->lock) {
+		data->min_ticks_per_step = ticks;
+		config->timing_source->update(dev, data->min_ticks_per_step);
+	}
+
 	return 0;
 }
