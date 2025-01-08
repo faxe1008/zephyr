@@ -17,18 +17,17 @@ static void step_counter_top_interrupt(const struct device *dev, void *user_data
 	stepper_handle_timing_signal(data->dev);
 }
 
-int step_counter_timing_source_update(const struct device *dev, const uint32_t velocity)
+int step_counter_timing_source_update(const struct device *dev, const uint64_t step_interval_us)
 {
 	const struct step_dir_stepper_common_config *config = dev->config;
 	struct step_dir_stepper_common_data *data = dev->data;
 	int ret;
 
-	if (velocity == 0) {
+	if (step_interval_us == 0) {
 		return -EINVAL;
 	}
 
-	data->counter_top_cfg.ticks =
-		DIV_ROUND_UP(counter_us_to_ticks(config->counter, USEC_PER_SEC), velocity);
+	data->counter_top_cfg.ticks = counter_us_to_ticks(config->counter, step_interval_us);
 
 	/* Lock interrupts while modifying counter settings */
 	int key = irq_lock();

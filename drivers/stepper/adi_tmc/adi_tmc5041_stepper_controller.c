@@ -348,7 +348,7 @@ static int tmc5041_stepper_move_by(const struct device *dev, const int32_t micro
 	return 0;
 }
 
-static int tmc5041_stepper_set_max_velocity(const struct device *dev, uint32_t velocity)
+static int tmc5041_stepper_set_step_interval(const struct device *dev, uint64_t step_interval_us)
 {
 	const struct tmc5041_stepper_config *config = dev->config;
 	const struct tmc5041_config *tmc5041_config = config->controller->config;
@@ -356,7 +356,13 @@ static int tmc5041_stepper_set_max_velocity(const struct device *dev, uint32_t v
 	uint32_t velocity_fclk;
 	int err;
 
-	velocity_fclk = tmc5xxx_calculate_velocity_from_hz_to_fclk(velocity, clock_frequency);
+	if (step_interval_us == 0) {
+		LOG_ERR("Step interval cannot be zero");
+		return -EINVAL;
+	}
+
+	velocity_fclk = tmc5xxx_calculate_velocity_fclk_from_step_interval(step_interval_us,
+									   clock_frequency);
 
 	err = tmc5041_write(config->controller, TMC5041_VMAX(config->index), velocity_fclk);
 	if (err != 0) {
@@ -477,18 +483,12 @@ static int tmc5041_stepper_move_to(const struct device *dev, const int32_t micro
 	return 0;
 }
 
-static int tmc5041_stepper_run(const struct device *dev, const enum stepper_direction direction,
-			       const uint32_t velocity)
+static int tmc5041_stepper_run(const struct device *dev, const enum stepper_direction direction)
 {
-	LOG_DBG("Stepper motor controller %s run with velocity %d", dev->name, velocity);
+	LOG_DBG("Stepper motor controller %s run", dev->name);
 	const struct tmc5041_stepper_config *config = dev->config;
-	const struct tmc5041_config *tmc5041_config = config->controller->config;
 	struct tmc5041_stepper_data *data = dev->data;
-	const uint32_t clock_frequency = tmc5041_config->clock_frequency;
-	uint32_t velocity_fclk;
 	int err;
-
-	velocity_fclk = tmc5xxx_calculate_velocity_from_hz_to_fclk(velocity, clock_frequency);
 
 	if (config->is_sg_enabled) {
 		err = stallguard_enable(dev, false);
@@ -504,19 +504,11 @@ static int tmc5041_stepper_run(const struct device *dev, const enum stepper_dire
 		if (err != 0) {
 			return -EIO;
 		}
-		err = tmc5041_write(config->controller, TMC5041_VMAX(config->index), velocity_fclk);
-		if (err != 0) {
-			return -EIO;
-		}
 		break;
 
 	case STEPPER_DIRECTION_NEGATIVE:
 		err = tmc5041_write(config->controller, TMC5041_RAMPMODE(config->index),
 				    TMC5XXX_RAMPMODE_NEGATIVE_VELOCITY_MODE);
-		if (err != 0) {
-			return -EIO;
-		}
-		err = tmc5041_write(config->controller, TMC5041_VMAX(config->index), velocity_fclk);
 		if (err != 0) {
 			return -EIO;
 		}
@@ -724,7 +716,7 @@ static int tmc5041_stepper_init(const struct device *dev)
 		.enable = tmc5041_stepper_enable,						\
 		.is_moving = tmc5041_stepper_is_moving,						\
 		.move_by = tmc5041_stepper_move_by,						\
-		.set_max_velocity = tmc5041_stepper_set_max_velocity,				\
+		.set_step_interval = tmc5041_stepper_set_step_interval,				\
 		.set_micro_step_res = tmc5041_stepper_set_micro_step_res,			\
 		.get_micro_step_res = tmc5041_stepper_get_micro_step_res,			\
 		.set_reference_position = tmc5041_stepper_set_reference_position,		\
