@@ -8,6 +8,7 @@
 #define DT_DRV_COMPAT zephyr_sdl_dc
 
 #include <zephyr/drivers/display.h>
+#include <zephyr/kernel.h>
 
 #include <string.h>
 #include <stdlib.h>
@@ -27,6 +28,15 @@ struct sdl_display_config {
 	uint16_t width;
 };
 
+#define WRITE_OPERATION_BUF_SIZE 500*500*4
+
+struct sdl_write_operation {
+    uint16_t x;
+    uint16_t y;
+    struct display_buffer_descriptor desc;
+    uint8_t buf[WRITE_OPERATION_BUF_SIZE];
+};
+
 struct sdl_display_data {
 	void *window;
 	void *renderer;
@@ -38,7 +48,51 @@ struct sdl_display_data {
 	enum display_pixel_format current_pixel_format;
 	uint8_t *buf;
 	uint8_t *read_buf;
+
+	struct k_msgq* write_msgq;
+	K_KERNEL_STACK_MEMBER(write_thread_stack, 2048);
+	struct k_thread thread;
 };
+
+static void sdl_display_thread(void *p1, void *p2, void *p3)
+{
+	const struct device *dev = p1;
+	struct sdl_display_data *disp_data = dev->data;
+	const struct sdl_display_config *config = dev->config;
+	bool use_accelerator = true;
+	IF_DISABLED(CONFIG_SDL_DISPLAY_USE_HARDWARE_ACCELERATOR, (use_accelerator = false));
+
+
+	if (sdl_display_zoom_pct == UINT32_MAX) {
+		sdl_display_zoom_pct = CONFIG_SDL_DISPLAY_ZOOM_PCT;
+	}
+
+	int rc = sdl_display_init_bottom(config->height, config->width, sdl_display_zoom_pct,
+					 use_accelerator, &disp_data->window, dev,
+					 &disp_data->renderer, &disp_data->mutex,
+					 &disp_data->texture, &disp_data->read_texture,
+					 &disp_data->background_texture,
+					 CONFIG_SDL_DISPLAY_TRANSPARENCY_GRID_CELL_COLOR_1,
+					 CONFIG_SDL_DISPLAY_TRANSPARENCY_GRID_CELL_COLOR_2,
+					 CONFIG_SDL_DISPLAY_TRANSPARENCY_GRID_CELL_SIZE);
+
+	if (rc != 0) {
+		LOG_ERR("Failed to create SDL display");
+		return;
+	}
+
+	disp_data->display_on = false;
+
+	while(1) {
+		struct sdl_write_operation write_op;
+		k_msgq_get(disp_data->write_msgq, &write_op, K_FOREVER);
+		sdl_display_write_bottom(write_op.desc.height, write_op.desc.width, write_op.x, write_op.y,
+                                 disp_data->renderer, disp_data->mutex, disp_data->texture,
+                                 disp_data->background_texture, write_op.buf, disp_data->display_on,
+                                 write_op.desc.frame_incomplete);
+    }
+
+}
 
 static inline uint32_t mono_pixel_order(uint32_t order)
 {
@@ -51,12 +105,9 @@ static inline uint32_t mono_pixel_order(uint32_t order)
 
 static int sdl_display_init(const struct device *dev)
 {
-	const struct sdl_display_config *config = dev->config;
 	struct sdl_display_data *disp_data = dev->data;
-	bool use_accelerator = true;
 	LOG_DBG("Initializing display driver");
 
-	IF_DISABLED(CONFIG_SDL_DISPLAY_USE_HARDWARE_ACCELERATOR, (use_accelerator = false));
 
 	disp_data->current_pixel_format =
 #if defined(CONFIG_SDL_DISPLAY_DEFAULT_PIXEL_FORMAT_RGB_888)
@@ -76,25 +127,11 @@ static int sdl_display_init(const struct device *dev)
 #endif /* SDL_DISPLAY_DEFAULT_PIXEL_FORMAT */
 		;
 
-	if (sdl_display_zoom_pct == UINT32_MAX) {
-		sdl_display_zoom_pct = CONFIG_SDL_DISPLAY_ZOOM_PCT;
-	}
 
-	int rc = sdl_display_init_bottom(config->height, config->width, sdl_display_zoom_pct,
-					 use_accelerator, &disp_data->window, dev,
-					 &disp_data->renderer, &disp_data->mutex,
-					 &disp_data->texture, &disp_data->read_texture,
-					 &disp_data->background_texture,
-					 CONFIG_SDL_DISPLAY_TRANSPARENCY_GRID_CELL_COLOR_1,
-					 CONFIG_SDL_DISPLAY_TRANSPARENCY_GRID_CELL_COLOR_2,
-					 CONFIG_SDL_DISPLAY_TRANSPARENCY_GRID_CELL_SIZE);
+	k_thread_create(&disp_data->thread, disp_data->write_thread_stack,
+			K_KERNEL_STACK_SIZEOF(disp_data->write_thread_stack), sdl_display_thread, dev, NULL, NULL,
+			5, 0, K_NO_WAIT);
 
-	if (rc != 0) {
-		LOG_ERR("Failed to create SDL display");
-		return -EIO;
-	}
-
-	disp_data->display_on = false;
 
 	return 0;
 }
@@ -289,10 +326,19 @@ static int sdl_display_write(const struct device *dev, const uint16_t x,
 		sdl_display_write_l8(disp_data->buf, desc, buf);
 	}
 
-	sdl_display_write_bottom(desc->height, desc->width, x, y, disp_data->renderer,
-				 disp_data->mutex, disp_data->texture,
-				 disp_data->background_texture, disp_data->buf,
-				 disp_data->display_on, desc->frame_incomplete);
+	struct sdl_write_operation write_op = {
+		.x = x,
+		.y = y,
+		.desc = *desc,
+	};
+
+	if(desc->buf_size < WRITE_OPERATION_BUF_SIZE) {
+		memcpy(write_op.buf, disp_data->buf, desc->buf_size);
+	} else {
+		LOG_ERR("Buffer size too large");
+	}
+
+	k_msgq_put(disp_data->write_msgq, &write_op, K_FOREVER);
 
 	return 0;
 }
@@ -609,9 +655,11 @@ static DEVICE_API(display, sdl_display_api) = {
 				   * DT_INST_PROP(n, width)];		\
 	static uint8_t sdl_read_buf_##n[4 * DT_INST_PROP(n, height)	\
 					* DT_INST_PROP(n, width)];	\
+	K_MSGQ_DEFINE(write_msgq_##n, sizeof(struct sdl_write_operation), 5, 4); \
 	static struct sdl_display_data sdl_data_##n = {			\
 		.buf = sdl_buf_##n,					\
 		.read_buf = sdl_read_buf_##n,				\
+		.write_msgq = &write_msgq_##n,                              \
 	};								\
 									\
 	DEVICE_DT_INST_DEFINE(n, &sdl_display_init, NULL,		\
