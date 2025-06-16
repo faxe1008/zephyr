@@ -14,8 +14,9 @@ config LV_Z_DOUBLE_VDB
 config LV_Z_VDB_CUSTOM_SECTION
 	default y
 
-config LV_Z_FULL_REFRESH
-	default y
+choice LV_Z_RENDERING_MODE
+	default LV_Z_FULL_REFRESH
+endchoice
 
 endif #LVGL
 endif # BOARD_STM32H747I_DISCO_STM32H747XX_M7
