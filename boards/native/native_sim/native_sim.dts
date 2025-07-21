@@ -190,8 +190,8 @@
 
 	sdl_dc: sdl_dc {
 		compatible = "zephyr,sdl-dc";
-		height = <240>;
-		width = <320>;
+		height = <480>;
+		width = <800>;
 	};
 
 	input_sdl_touch: input-sdl-touch {
