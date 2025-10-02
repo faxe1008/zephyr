@@ -7,7 +7,7 @@
 Overview
 ********
 
-This sample app demonstrates use of the file system API and uses the FAT or Ext2 file
+This sample app demonstrates use of the file system API and uses the FAT, Ext2 or LittleFS file
 system driver with SDHC card, SoC flash or external flash chip.
 
 To access device the sample uses :ref:`disk_access_api`.
@@ -16,7 +16,7 @@ Requirements for SD card support
 ********************************
 
 This project requires SD card support and microSD card formatted with proper file system
-(FAT or Ext2) See the :ref:`disk_access_api` documentation for Zephyr implementation details.
+(FAT, Ext2 or LittleFS) See the :ref:`disk_access_api` documentation for Zephyr implementation details.
 Boards that by default use SD card for storage: ``arduino_mkrzero``, ``esp_wrover_kit``,
 ``mimxrt1050_evk``, ``nrf52840_blip`` and  ``olimexino_stm32``. The sample should be able
 to run with any other board that has "zephyr,sdmmc-disk" DT node enabled.
@@ -86,3 +86,54 @@ the sample.
 
 A microSD card must be present in a microSD card slot of the board, for the sample to execute.
 After starting the sample a contents of a root directory should be printed on the console.
+
+Building and Running LittleFS samples
+*************************************
+
+LittleFS sample can be built for boards with SD card support. Because
+FAT is the default file system for this sample, additional flags must be passed to build
+the sample with LittleFS support.
+
+.. zephyr-app-commands::
+   :zephyr-app: samples/subsys/fs/fs_sample
+   :board: nrf52840dk/nrf52840
+   :gen-args: -DCONF_FILE=prj_littlefs.conf
+   :goals: build
+   :compact:
+
+A microSD card must be present in a microSD card slot of the board, for the sample to execute.
+The LittleFS configuration includes automatic drive formatting, which will erase any existing
+data on the SD card. To disable this behavior, set ``CONFIG_FS_SAMPLE_FORMAT_DRIVE=n`` in your
+configuration.
+
+Drive Formatting
+****************
+
+This sample supports automatic drive formatting for all supported filesystems (FAT, EXT2, and LittleFS).
+When enabled via ``CONFIG_FS_SAMPLE_FORMAT_DRIVE=y``, the sample will format the drive before
+attempting to mount it. This ensures a clean filesystem but will erase all existing data.
+
+.. warning::
+   Drive formatting will erase all existing data on the storage device. Use with caution.
+
+Building and Running LittleFS samples
+*************************************
+
+LittleFS sample can be built for boards that support SD card access. Because
+FAT is default file system for this sample, additional flags must be passed to build
+the sample with LittleFS support.
+
+.. zephyr-app-commands::
+   :zephyr-app: samples/subsys/fs/fs_sample
+   :board: <board>
+   :gen-args: -DCONF_FILE=prj_littlefs.conf
+   :goals: build
+   :compact:
+
+A microSD card must be present in a microSD card slot of the board, for the sample to execute.
+The sample will use LittleFS with block device support to access the SD card.
+After starting the sample, the contents of the root directory should be printed on the console.
+
+.. note::
+   LittleFS will create its file system structure on the SD card. If the card already
+   contains a different file system, it may need to be reformatted or re-partitioned.

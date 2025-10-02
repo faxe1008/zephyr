@@ -79,6 +79,23 @@ tests:
     platform_allow:
       - hifive_unmatched/fu740/s7
       - bl5340_dvk/nrf5340/cpuapp
+  sample.filesystem.littlefs:
+    build_only: true
+    extra_args: CONF_FILE="prj_littlefs.conf"
+    depends_on: sdhc
+    harness: console
+    harness_config:
+      fixture: fixture_sdhc
+      type: multi_line
+      regex:
+        - "Block count"
+        - "Sector size"
+        - "Memory Size"
+        - "Disk mounted"
+  sample.filesystem.littlefs.nrf52840dk_nrf52840:
+    build_only: true
+    platform_allow: nrf52840dk/nrf52840
+    extra_args: EXTRA_CONF_FILE="boards/nrf52840dk_nrf52840_littlefs.conf"
   sample.filesystem.fat_fs.stm32h747i_disco_m7_sdmmc:
     build_only: true
     platform_allow: stm32h747i_disco/stm32h747xx/m7

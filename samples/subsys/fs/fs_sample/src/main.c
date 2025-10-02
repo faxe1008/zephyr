@@ -13,6 +13,7 @@
 #include <zephyr/storage/disk_access.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/fs/fs.h>
+#include <zephyr/fs/littlefs.h>
 
 #if defined(CONFIG_FAT_FILESYSTEM_ELM)
 
@@ -51,6 +52,20 @@ static struct fs_mount_t mp = {
 	.mnt_point = "/ext",
 };
 
+#elif defined(CONFIG_FILE_SYSTEM_LITTLEFS)
+
+#define DISK_DRIVE_NAME "SD"
+#define DISK_MOUNT_PT "/lfs"
+
+static struct fs_littlefs lfs_fs;
+static struct fs_mount_t mp = {
+	.type = FS_LITTLEFS,
+	.fs_data = &lfs_fs,
+	.storage_dev = (void *)DISK_DRIVE_NAME,
+	.mnt_point = DISK_MOUNT_PT,
+	.flags = FS_MOUNT_FLAG_USE_DISK_ACCESS,
+};
+
 #endif
 
 #if defined(CONFIG_FAT_FILESYSTEM_ELM)
@@ -65,6 +80,31 @@ LOG_MODULE_REGISTER(main);
 #define SOME_FILE_NAME "some.dat"
 #define SOME_DIR_NAME "some"
 #define SOME_REQUIRED_LEN MAX(sizeof(SOME_FILE_NAME), sizeof(SOME_DIR_NAME))
+
+static int lsdir(const char *path);
+
+static int format_drive(void)
+{
+	int rc;
+	
+#if defined(CONFIG_FAT_FILESYSTEM_ELM)
+	rc = fs_mkfs(FS_FATFS, (uintptr_t)"SD:", NULL, 0);
+#elif defined(CONFIG_FILE_SYSTEM_EXT2)
+	rc = fs_mkfs(FS_EXT2, (uintptr_t)"SD:", NULL, 0);
+#elif defined(CONFIG_FILE_SYSTEM_LITTLEFS)
+	rc = fs_mkfs(FS_LITTLEFS, (uintptr_t)"SD:", NULL, 0);
+#else
+	rc = -ENOTSUP;
+#endif
+
+	if (rc < 0) {
+		LOG_ERR("Failed to format drive: %d", rc);
+		return rc;
+	}
+
+	LOG_INF("Drive formatted successfully");
+	return 0;
+}
 
 static int lsdir(const char *path);
 #ifdef CONFIG_FS_SAMPLE_CREATE_SOME_ENTRIES
@@ -149,6 +189,15 @@ int main(void)
 	} while (0);
 
 	mp.mnt_point = disk_mount_pt;
+
+#ifdef CONFIG_FS_SAMPLE_FORMAT_DRIVE
+	/* First, format the drive */
+	LOG_INF("Formatting drive...");
+	int format_res = format_drive();
+	if (format_res != 0) {
+		LOG_ERR("Failed to format drive, attempting mount anyway");
+	}
+#endif
 
 	int res = fs_mount(&mp);
 
