@@ -305,6 +305,55 @@ zephyr_library_sources(
     ${LVGL_DIR}/src/libs/vg_lite_driver/VGLite/vg_lite_path.c
     ${LVGL_DIR}/src/libs/vg_lite_driver/VGLite/vg_lite_stroke.c
 
+    ${LVGL_DIR}/src/libs/thorvg/tvgAccessor.cpp
+    ${LVGL_DIR}/src/libs/thorvg/tvgAnimation.cpp
+    ${LVGL_DIR}/src/libs/thorvg/tvgCanvas.cpp
+    ${LVGL_DIR}/src/libs/thorvg/tvgCapi.cpp
+    ${LVGL_DIR}/src/libs/thorvg/tvgCompressor.cpp
+    ${LVGL_DIR}/src/libs/thorvg/tvgFill.cpp
+    ${LVGL_DIR}/src/libs/thorvg/tvgGlCanvas.cpp
+    ${LVGL_DIR}/src/libs/thorvg/tvgInitializer.cpp
+    ${LVGL_DIR}/src/libs/thorvg/tvgLoader.cpp
+    ${LVGL_DIR}/src/libs/thorvg/tvgLottieAnimation.cpp
+    ${LVGL_DIR}/src/libs/thorvg/tvgLottieBuilder.cpp
+    ${LVGL_DIR}/src/libs/thorvg/tvgLottieExpressions.cpp
+    ${LVGL_DIR}/src/libs/thorvg/tvgLottieInterpolator.cpp
+    ${LVGL_DIR}/src/libs/thorvg/tvgLottieLoader.cpp
+    ${LVGL_DIR}/src/libs/thorvg/tvgLottieModel.cpp
+    ${LVGL_DIR}/src/libs/thorvg/tvgLottieModifier.cpp
+    ${LVGL_DIR}/src/libs/thorvg/tvgLottieParser.cpp
+    ${LVGL_DIR}/src/libs/thorvg/tvgLottieParserHandler.cpp
+    ${LVGL_DIR}/src/libs/thorvg/tvgMath.cpp
+    ${LVGL_DIR}/src/libs/thorvg/tvgPaint.cpp
+    ${LVGL_DIR}/src/libs/thorvg/tvgPicture.cpp
+    ${LVGL_DIR}/src/libs/thorvg/tvgRawLoader.cpp
+    ${LVGL_DIR}/src/libs/thorvg/tvgRender.cpp
+    ${LVGL_DIR}/src/libs/thorvg/tvgSaver.cpp
+    ${LVGL_DIR}/src/libs/thorvg/tvgScene.cpp
+    ${LVGL_DIR}/src/libs/thorvg/tvgShape.cpp
+    ${LVGL_DIR}/src/libs/thorvg/tvgStr.cpp
+    ${LVGL_DIR}/src/libs/thorvg/tvgSvgCssStyle.cpp
+    ${LVGL_DIR}/src/libs/thorvg/tvgSvgLoader.cpp
+    ${LVGL_DIR}/src/libs/thorvg/tvgSvgPath.cpp
+    ${LVGL_DIR}/src/libs/thorvg/tvgSvgSceneBuilder.cpp
+    ${LVGL_DIR}/src/libs/thorvg/tvgSvgUtil.cpp
+    ${LVGL_DIR}/src/libs/thorvg/tvgSwCanvas.cpp
+    ${LVGL_DIR}/src/libs/thorvg/tvgSwFill.cpp
+    ${LVGL_DIR}/src/libs/thorvg/tvgSwImage.cpp
+    ${LVGL_DIR}/src/libs/thorvg/tvgSwMath.cpp
+    ${LVGL_DIR}/src/libs/thorvg/tvgSwMemPool.cpp
+    ${LVGL_DIR}/src/libs/thorvg/tvgSwPostEffect.cpp
+    ${LVGL_DIR}/src/libs/thorvg/tvgSwRaster.cpp
+    ${LVGL_DIR}/src/libs/thorvg/tvgSwRenderer.cpp
+    ${LVGL_DIR}/src/libs/thorvg/tvgSwRle.cpp
+    ${LVGL_DIR}/src/libs/thorvg/tvgSwShape.cpp
+    ${LVGL_DIR}/src/libs/thorvg/tvgSwStroke.cpp
+    ${LVGL_DIR}/src/libs/thorvg/tvgTaskScheduler.cpp
+    ${LVGL_DIR}/src/libs/thorvg/tvgText.cpp
+    ${LVGL_DIR}/src/libs/thorvg/tvgWgCanvas.cpp
+    ${LVGL_DIR}/src/libs/thorvg/tvgXmlParser.cpp
+
+
     ${LVGL_DIR}/src/lv_init.c
 
     ${LVGL_DIR}/src/misc/cache/class/lv_cache_lru_ll.c
